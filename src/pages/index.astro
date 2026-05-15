@@ -11,19 +11,17 @@ const tags = [...new Set(posts.flatMap((post) => post.data.tags))].slice(0, 12);
 ---
 
 <BaseLayout>
-  <section class="container hero">
-    <div>
-      <h1>Konh Blog</h1>
-      <p>
-        Personal notes on frontend engineering, product details, and the small technical decisions that compound into a
-        better interface.
-      </p>
-      <div class="tag-row" aria-label="Topics">
-        {tags.map((tag) => <a class="tag" href={`/tags/${encodeURIComponent(tag)}/`}>{tag}</a>)}
-      </div>
-    </div>
-    <div class="profile-video" aria-label="Konh avatar animation">
+  <section class="container intro">
+    <div class="profile-video" aria-label="Konh character animation">
       <video src="/media/konh-idle.webm" autoplay muted loop playsinline></video>
+    </div>
+    <h1>Konh Blog</h1>
+    <p>
+      Personal notes on frontend engineering, product details, and the small technical decisions that compound into a
+      better interface.
+    </p>
+    <div class="tag-row" aria-label="Topics">
+      {tags.map((tag) => <a class="tag" href={`/tags/${encodeURIComponent(tag)}/`}>{tag}</a>)}
     </div>
   </section>
 
