@@ -1,0 +1,4 @@
+interface:
+  display_name: "Konh Blog CMS"
+  short_description: "Operate the Konh Blog content workflow"
+  default_prompt: "Use $konh-blog-cms to draft, edit, validate, and publish a Konh Blog post."

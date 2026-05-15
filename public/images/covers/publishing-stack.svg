@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 780" role="img" aria-label="Publishing pipeline blocks">
+  <rect width="1200" height="780" fill="#fffaf1"/>
+  <path d="M0 0h1200v128H0z" fill="#0f8b7b"/>
+  <path d="M0 652h1200v128H0z" fill="#d94b35"/>
+  <g stroke="#171412" stroke-width="7">
+    <path d="M105 236h218v170H105z" fill="#f7f4ee"/>
+    <path d="M491 165h218v170H491z" fill="#c9921d"/>
+    <path d="M877 236h218v170H877z" fill="#202733"/>
+    <path d="M325 321h154M710 250h154" fill="none"/>
+    <path d="m466 300 24 21-24 22M851 229l24 21-24 22" fill="none"/>
+    <path d="M183 478h834" fill="none" stroke-dasharray="18 18"/>
+  </g>
+  <g fill="#171412" font-family="Optima, Candara, sans-serif" font-size="52" font-weight="700">
+    <text x="151" y="337">MDX</text>
+    <text x="542" y="266">ASTRO</text>
+    <text x="923" y="337" fill="#fffaf1">HTML</text>
+  </g>
+</svg>

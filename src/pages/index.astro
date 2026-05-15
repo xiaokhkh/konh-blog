@@ -1,0 +1,43 @@
+---
+import PostCard from '@/components/PostCard.astro';
+import BaseLayout from '@/layouts/BaseLayout.astro';
+import { getCollection } from 'astro:content';
+
+const posts = (await getCollection('posts'))
+  .filter((post) => !post.data.draft)
+  .sort((a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf());
+
+const [featured] = posts;
+const featuredSlug = featured?.id.replace(/\.(md|mdx)$/, '');
+---
+
+<BaseLayout>
+  <section class="container hero">
+    <div>
+      <span class="meta-line">Astro 6 / MDX / Git-owned publishing</span>
+      <h1>Konh Blog</h1>
+      <p>
+        A durable personal site template for technical writing, field notes, and long-form essays. Content lives in Git;
+        the web output is fast static HTML.
+      </p>
+    </div>
+    {
+      featured && (
+        <a class="hero-panel" href={`/posts/${featuredSlug}/`}>
+          {featured.data.cover && <img src={featured.data.cover} alt={featured.data.coverAlt ?? ''} />}
+          <p>{featured.data.title}</p>
+        </a>
+      )
+    }
+  </section>
+
+  <section class="container" aria-labelledby="latest-posts">
+    <div class="section-head">
+      <h2 id="latest-posts">Latest</h2>
+      <a href="/archive/">All posts</a>
+    </div>
+    <div class="post-grid">
+      {posts.slice(0, 6).map((post) => <PostCard post={post} />)}
+    </div>
+  </section>
+</BaseLayout>

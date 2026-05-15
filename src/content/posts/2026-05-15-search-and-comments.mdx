@@ -1,0 +1,23 @@
+---
+title: "Search and Comments Without a Backend"
+description: "Pagefind and Giscus cover the two interactive features most personal sites actually need."
+pubDate: 2026-05-15
+tags: ["search", "comments", "static"]
+cover: "/images/covers/ops-field.svg"
+coverAlt: "Editorial grid with clipped notes"
+---
+
+## Static search
+
+Pagefind runs after the Astro build and emits a compact search index. The browser loads that index only on the search
+page, so regular article pages stay lean.
+
+## GitHub-backed comments
+
+Giscus uses GitHub Discussions as the backing store. It is not anonymous, but it avoids maintaining a comment database and
+keeps moderation in a familiar place.
+
+## Minimal moving parts
+
+For a personal site, the best infrastructure is often the part you did not add. Static HTML, a generated search index, and
+GitHub-backed comments cover a surprising amount of ground.

@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 780" role="img" aria-label="Editorial field grid with clipped notes">
+  <defs>
+    <pattern id="grid" width="48" height="48" patternUnits="userSpaceOnUse">
+      <path d="M48 0H0v48" fill="none" stroke="#171412" stroke-opacity=".16" stroke-width="2"/>
+    </pattern>
+    <filter id="grain">
+      <feTurbulence type="fractalNoise" baseFrequency=".72" numOctaves="3" stitchTiles="stitch"/>
+      <feColorMatrix type="saturate" values="0"/>
+      <feComponentTransfer>
+        <feFuncA type="table" tableValues="0 .18"/>
+      </feComponentTransfer>
+    </filter>
+  </defs>
+  <rect width="1200" height="780" fill="#f7f4ee"/>
+  <rect width="1200" height="780" fill="url(#grid)"/>
+  <path d="M0 560 1200 332v448H0Z" fill="#202733"/>
+  <path d="M94 107h408v248H94z" fill="#fffaf1" stroke="#171412" stroke-width="6"/>
+  <path d="M131 161h290M131 208h330M131 255h214" stroke="#171412" stroke-width="15" stroke-linecap="square"/>
+  <path d="M602 72h324v324H602z" fill="#d94b35" stroke="#171412" stroke-width="6"/>
+  <path d="m649 332 228-212M655 120h221v211H655z" fill="none" stroke="#fffaf1" stroke-width="14"/>
+  <path d="M768 466h322v202H768z" fill="#0f8b7b" stroke="#171412" stroke-width="6"/>
+  <circle cx="840" cy="536" r="34" fill="#c9921d" stroke="#171412" stroke-width="6"/>
+  <path d="M900 534h122M900 582h82" stroke="#fffaf1" stroke-width="14"/>
+  <rect width="1200" height="780" filter="url(#grain)"/>
+</svg>

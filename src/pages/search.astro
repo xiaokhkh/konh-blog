@@ -1,0 +1,38 @@
+---
+import BaseLayout from '@/layouts/BaseLayout.astro';
+---
+
+<BaseLayout title="Search | Konh Blog" description="Search the static index.">
+  <section class="container">
+    <div class="section-head">
+      <h1>Search</h1>
+      <span class="meta-line">Powered by Pagefind</span>
+    </div>
+    <div class="search-shell">
+      <div id="search">Build the site once to generate the search index.</div>
+    </div>
+  </section>
+  <script is:inline>
+    const loadSearch = async () => {
+      try {
+        await new Promise((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = '/pagefind/pagefind-ui.js';
+          script.onload = resolve;
+          script.onerror = reject;
+          document.head.append(script);
+        });
+        const link = document.createElement('link');
+        link.rel = 'stylesheet';
+        link.href = '/pagefind/pagefind-ui.css';
+        document.head.append(link);
+        new window.PagefindUI({ element: '#search', showSubResults: true });
+      } catch {
+        const el = document.querySelector('#search');
+        if (el) el.textContent = 'Run `pnpm run build && pnpm run preview` to use local search.';
+      }
+    };
+
+    loadSearch();
+  </script>
+</BaseLayout>

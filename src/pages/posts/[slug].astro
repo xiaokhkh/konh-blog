@@ -1,0 +1,64 @@
+---
+import BaseLayout from '@/layouts/BaseLayout.astro';
+import { getCollection, render } from 'astro:content';
+
+export async function getStaticPaths() {
+  const posts = (await getCollection('posts')).filter((post) => !post.data.draft);
+  return posts.map((post) => ({ params: { slug: post.id.replace(/\.(md|mdx)$/, '') }, props: { post } }));
+}
+
+const { post } = Astro.props;
+const { Content, headings } = await render(post);
+const date = post.data.pubDate.toLocaleDateString('en', {
+  year: 'numeric',
+  month: 'long',
+  day: '2-digit',
+});
+---
+
+<BaseLayout title={`${post.data.title} | Konh Blog`} description={post.data.description} image={post.data.cover}>
+  <article class="container article">
+    <header class="article-header">
+      <span class="meta-line">{date}</span>
+      <h1>{post.data.title}</h1>
+      <p>{post.data.description}</p>
+      <div class="tag-row">
+        {post.data.tags.map((tag) => <a class="tag" href={`/tags/${encodeURIComponent(tag)}/`}>{tag}</a>)}
+      </div>
+    </header>
+    {post.data.cover && <img class="article-cover" src={post.data.cover} alt={post.data.coverAlt ?? ''} />}
+    <div class="article-body">
+      <Content />
+    </div>
+    <aside class="toc">
+      <strong>On this page</strong>
+      {
+        headings
+          .filter((heading) => heading.depth === 2)
+          .map((heading) => <a href={`#${heading.slug}`}>{heading.text}</a>)
+      }
+    </aside>
+  </article>
+  <section class="container" id="comments">
+    <div class="section-head">
+      <h2>Comments</h2>
+      <span class="meta-line">Giscus-ready</span>
+    </div>
+    <script
+      is:inline
+      src="https://giscus.app/client.js"
+      data-repo={import.meta.env.PUBLIC_GISCUS_REPO}
+      data-repo-id={import.meta.env.PUBLIC_GISCUS_REPO_ID}
+      data-category={import.meta.env.PUBLIC_GISCUS_CATEGORY}
+      data-category-id={import.meta.env.PUBLIC_GISCUS_CATEGORY_ID}
+      data-mapping="pathname"
+      data-strict="0"
+      data-reactions-enabled="1"
+      data-emit-metadata="0"
+      data-input-position="bottom"
+      data-theme="light"
+      data-lang="en"
+      crossorigin="anonymous"
+      async></script>
+  </section>
+</BaseLayout>

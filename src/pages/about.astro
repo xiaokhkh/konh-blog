@@ -1,0 +1,38 @@
+---
+import BaseLayout from '@/layouts/BaseLayout.astro';
+---
+
+<BaseLayout title="About | Konh Blog" description="About this publishing setup.">
+  <section class="container article">
+    <header class="article-header">
+      <span class="meta-line">About this stack</span>
+      <h1>Git first, editor flexible.</h1>
+      <p>
+        This site keeps the canonical copy in Markdown and MDX. Obsidian, Cursor, VS Code, or a Git-based CMS can all
+        edit the same source without trapping the archive in a platform.
+      </p>
+    </header>
+    <div class="article-body">
+      <h2>Default workflow</h2>
+      <p>Write in <code>src/content/posts</code>, keep images in <code>public/images</code>, then push to GitHub.</p>
+      <h2>Optional CMS</h2>
+      <p>
+        The <code>public/admin</code> directory includes a Sveltia CMS entrypoint. Connect it to a GitHub repo when you
+        want browser-based editing.
+      </p>
+      <h2>Optional Notion bridge</h2>
+      <p>
+        Notion can remain a draft inbox, but published content should be exported into this repo so the live site has no
+        runtime dependency on Notion.
+      </p>
+    </div>
+    <aside class="toc">
+      <strong>Stack</strong>
+      Astro 6<br />
+      MDX<br />
+      Pagefind<br />
+      RSS<br />
+      Sveltia CMS-ready
+    </aside>
+  </section>
+</BaseLayout>

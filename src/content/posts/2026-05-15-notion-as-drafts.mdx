@@ -1,0 +1,28 @@
+---
+title: "Use Notion as Drafts, Not Infrastructure"
+description: "Notion is a good writing surface. It is a weak permanent publishing dependency."
+pubDate: 2026-05-15
+tags: ["notion", "migration", "cms"]
+cover: "/images/covers/notion-drafts.svg"
+coverAlt: "Draft notes moving into a repository"
+---
+
+## Keep the pleasant part
+
+Notion is excellent for rough writing, collecting references, and arranging blocks. It is also convenient on mobile. None
+of that requires the public website to depend on Notion at runtime.
+
+## Export before publishing
+
+The durable path is to export posts and assets into the repository:
+
+```txt
+Notion draft -> Markdown export -> local images -> commit -> static site
+```
+
+This keeps Notion optional. If the API is slow, unavailable, or changes shape, the published site keeps working.
+
+## Practical boundary
+
+Use Notion for drafts and collaboration. Use Git for the published archive. Use Astro for rendering. Use object storage or
+local static files for assets.
