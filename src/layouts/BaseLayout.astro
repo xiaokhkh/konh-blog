@@ -10,7 +10,7 @@ type Props = {
 };
 
 const {
-  title = 'Konh Blog',
+  title = 'konh',
   description = 'A fast, Git-owned Astro blog for essays, notes, and durable personal publishing.',
   image = '/images/covers/ops-field.svg',
 } = Astro.props;
@@ -26,12 +26,13 @@ const canonical = new URL(Astro.url.pathname, Astro.site ?? Astro.url.origin);
     <title>{title}</title>
     <meta name="description" content={description} />
     <link rel="canonical" href={canonical} />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="apple-touch-icon" href="/favicon.png" />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:image" content={image} />
     <meta name="twitter:card" content="summary_large_image" />
-    <link rel="alternate" type="application/rss+xml" title="Konh Blog RSS" href="/rss.xml" />
+    <link rel="alternate" type="application/rss+xml" title="konh RSS" href="/rss.xml" />
   </head>
   <body>
     <a class="skip-link" href="#content">Skip to content</a>

@@ -13,7 +13,7 @@ const tagCounts = posts.reduce<Record<string, number>>((acc, post) => {
 const tags = Object.entries(tagCounts).sort(([a], [b]) => a.localeCompare(b));
 ---
 
-<BaseLayout title="Tags | Konh Blog" description="Browse posts by topic.">
+<BaseLayout title="Tags | konh" description="Browse posts by topic.">
   <section class="container">
     <div class="section-head">
       <h1>Tags</h1>

@@ -15,7 +15,7 @@ const posts = (await getCollection('posts'))
   .sort((a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf());
 ---
 
-<BaseLayout title={`${tag} | Konh Blog`} description={`Posts tagged ${tag}.`}>
+<BaseLayout title={`${tag} | konh`} description={`Posts tagged ${tag}.`}>
   <section class="container">
     <div class="section-head">
       <h1>{tag}</h1>

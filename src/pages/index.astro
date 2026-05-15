@@ -6,26 +6,16 @@ import { getCollection } from 'astro:content';
 const posts = (await getCollection('posts'))
   .filter((post) => !post.data.draft)
   .sort((a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf());
-
-const tags = [...new Set(posts.flatMap((post) => post.data.tags))].slice(0, 12);
 ---
 
 <BaseLayout>
-  <section class="container intro">
-    <div class="profile-video" aria-label="Konh character animation">
+  <section class="container page-character" aria-label="Konh character animation">
+    <div class="sleeping-konh">
       <video src="/media/konh-idle.webm" autoplay muted loop playsinline></video>
-    </div>
-    <h1>Konh Blog</h1>
-    <p>
-      Personal notes on frontend engineering, product details, and the small technical decisions that compound into a
-      better interface.
-    </p>
-    <div class="tag-row" aria-label="Topics">
-      {tags.map((tag) => <a class="tag" href={`/tags/${encodeURIComponent(tag)}/`}>{tag}</a>)}
     </div>
   </section>
 
-  <section class="container" aria-labelledby="latest-posts">
+  <section class="container home-posts" aria-labelledby="latest-posts">
     <div class="section-head">
       <h2 id="latest-posts">Latest essays</h2>
       <a href="/archive/">All posts</a>
