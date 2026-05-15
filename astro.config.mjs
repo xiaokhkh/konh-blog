@@ -2,7 +2,7 @@ import mdx from '@astrojs/mdx';
 import { defineConfig } from 'astro/config';
 
 export default defineConfig({
-  site: 'https://example.com',
+  site: 'https://konh-blog.vercel.app',
   integrations: [mdx()],
   markdown: {
     shikiConfig: {
