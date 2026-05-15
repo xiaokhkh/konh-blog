@@ -9,16 +9,21 @@ const posts = (await getCollection('posts'))
 
 const [featured] = posts;
 const featuredSlug = featured?.id.replace(/\.(md|mdx)$/, '');
+const tags = [...new Set(posts.flatMap((post) => post.data.tags))].slice(0, 12);
 ---
 
 <BaseLayout>
   <section class="container hero">
     <div>
-      <span class="meta-line">Takahashi mode / Astro 6 / MDX</span>
-      <h1>少字。大声。</h1>
+      <span class="meta-line">Essays / field notes / technical memory</span>
+      <h1>Konh Index</h1>
       <p>
-        Konh Blog is a Git-owned static site for notes that should be read fast, remembered faster, and moved anywhere.
+        A public notebook for durable arguments, implementation notes, and small discoveries that should remain
+        searchable after the feed forgets them.
       </p>
+      <div class="tag-row" aria-label="Topics">
+        {tags.map((tag) => <a class="tag" href={`/tags/${encodeURIComponent(tag)}/`}>{tag}</a>)}
+      </div>
     </div>
     {
       featured && (
