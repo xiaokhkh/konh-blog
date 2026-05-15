@@ -7,37 +7,29 @@ const posts = (await getCollection('posts'))
   .filter((post) => !post.data.draft)
   .sort((a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf());
 
-const [featured] = posts;
-const featuredSlug = featured?.id.replace(/\.(md|mdx)$/, '');
 const tags = [...new Set(posts.flatMap((post) => post.data.tags))].slice(0, 12);
 ---
 
 <BaseLayout>
   <section class="container hero">
     <div>
-      <span class="meta-line">Essays / field notes / technical memory</span>
-      <h1>Konh Index</h1>
+      <h1>Konh Blog</h1>
       <p>
-        A public notebook for durable arguments, implementation notes, and small discoveries that should remain
-        searchable after the feed forgets them.
+        Personal notes on frontend engineering, product details, and the small technical decisions that compound into a
+        better interface.
       </p>
       <div class="tag-row" aria-label="Topics">
         {tags.map((tag) => <a class="tag" href={`/tags/${encodeURIComponent(tag)}/`}>{tag}</a>)}
       </div>
     </div>
-    {
-      featured && (
-        <a class="hero-panel" href={`/posts/${featuredSlug}/`}>
-          {featured.data.cover && <img src={featured.data.cover} alt={featured.data.coverAlt ?? ''} />}
-          <p>{featured.data.title}</p>
-        </a>
-      )
-    }
+    <div class="profile-video" aria-label="Konh avatar animation">
+      <video src="/media/konh-idle.webm" autoplay muted loop playsinline></video>
+    </div>
   </section>
 
   <section class="container" aria-labelledby="latest-posts">
     <div class="section-head">
-      <h2 id="latest-posts">Latest</h2>
+      <h2 id="latest-posts">Latest essays</h2>
       <a href="/archive/">All posts</a>
     </div>
     <div class="post-grid">
