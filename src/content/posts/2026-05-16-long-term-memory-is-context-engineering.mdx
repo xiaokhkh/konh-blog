@@ -1,0 +1,73 @@
+---
+title: "Long-Term Memory Is Context Engineering"
+description: "A reusable framing for AI memory systems: memory matters only when past experience becomes high-quality future context."
+pubDate: 2026-05-16
+tags: ["ai", "memory", "agents", "engineering"]
+---
+
+The first mistake in long-term memory design is believing that storing history means the AI remembers.
+
+An LLM does not browse a database at generation time. It sees its parameters, the current prompt, and the context that the system chooses to place in front of it. A memory is useful only when it is recalled, compressed, ranked, permissioned, and inserted as high-quality context.
+
+That makes memory a context engineering problem.
+
+## Raw history is not memory
+
+Raw conversation logs are useful, but they are not the thing that should usually enter the prompt. They are too long, too repetitive, too mixed, and often stale.
+
+Use raw history for:
+
+- audit,
+- re-extraction,
+- debugging,
+- dispute resolution,
+- rebuilding derived memory.
+
+Use derived memory for generation.
+
+## A better memory stack
+
+A practical stack separates several layers:
+
+- Raw transcript: the full source record.
+- Memory item: a subjective summary of a meaningful experience.
+- Evidence unit: the smallest semantic unit that can support one claim.
+- Graph edge: structured state such as ownership, location, visibility, or relationship.
+- Relationship state: accumulated attitude over time.
+- Context composer: the final policy for what enters the model.
+
+Each layer solves a different problem. Collapsing all of them into one vector store usually creates noisy retrieval and weak explanations.
+
+## Evidence units beat giant memories
+
+The smallest useful retrieval unit should be semantically complete. It should answer one class of question and trace back to a source.
+
+For example, a long memory may include travel, object transfer, a witness, emotion, and a future plan. Embedding the whole paragraph makes every query retrieve too much. A better system extracts smaller evidence units:
+
+- one location change,
+- one object state,
+- one relationship shift,
+- one plan,
+- one uncertainty claim.
+
+This is not token chunking. It is semantic decomposition.
+
+## Graphs stabilize what text cannot
+
+Text carries nuance. Graphs carry operational constraints.
+
+Embeddings are good at semantic similarity. They are weak at deciding which object owner is current, whether a fact expired, which agent knows a secret, or whether two memories conflict.
+
+Use graphs to constrain context before generation:
+
+- who knows what,
+- which fact is current,
+- what changed state,
+- which source supports the claim,
+- what should not be said by this speaker.
+
+The best system keeps text for nuance and uses graph state to prevent drift.
+
+## Source
+
+This essay was distilled from the long-term memory documents, especially [Long-Term Memory Goal Implementation Design](https://zhipu-ai.feishu.cn/docx/NGIRdjXweoRpIhxrceacrJI1nlc), [First Principles of Long-Term Memory: Organizing Better Context for LLMs Instead of Storing History](https://zhipu-ai.feishu.cn/docx/Ye3adRTJroLcScxfSzzcB7Byn9f), and [Embedding Thunk and Graph Recall Design](https://zhipu-ai.feishu.cn/docx/NpoedcHrHozyTGx6CgRcw2C3nmh).

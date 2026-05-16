@@ -1,0 +1,69 @@
+---
+title: "Prompts Are Product Logic"
+description: "A practical note on treating prompts as versioned, testable product behavior instead of disposable natural-language copy."
+pubDate: 2026-05-16
+tags: ["ai", "prompting", "product", "engineering"]
+---
+
+A prompt is not just text. In an AI product, a prompt can decide routing, tone, tool use, memory access, output shape, safety boundaries, and recovery behavior. That makes it product logic written in natural language.
+
+Once a prompt is treated as product logic, it deserves the same operational discipline as code.
+
+## The contract
+
+Every important prompt should have a clear contract:
+
+- What behavior does it own?
+- What context does it expect?
+- What output shape should it produce?
+- What should it refuse, ignore, or escalate?
+- What historical failures must stay fixed?
+
+Without that contract, prompt iteration becomes guesswork. A new version may improve one demo while breaking three invisible cases.
+
+## Test prompts with product fixtures
+
+Prompt evaluation should start from real product fixtures, not ideal examples.
+
+Useful fixtures include:
+
+- common happy paths,
+- ambiguous user requests,
+- malformed context,
+- long conversation history,
+- stale memory,
+- conflicting instructions,
+- cases where the model previously sounded wrong.
+
+The goal is not to make the prompt look clever. The goal is to preserve product behavior under realistic pressure.
+
+## Keep the context shape stable
+
+Many prompt regressions are really context regressions. The same instruction behaves differently when the surrounding memory, schema, system message, examples, or tool descriptions change.
+
+For production prompts, version the context shape together with the prompt:
+
+- section names,
+- data order,
+- required fields,
+- optional fields,
+- retrieval limits,
+- formatting constraints.
+
+If a prompt depends on a stable section called `Relevant memory`, changing that section into a mixed block of raw chat and inferred facts is a product change, not a harmless copy edit.
+
+## Preserve failure examples
+
+The most valuable prompt examples are often failures:
+
+- The agent used a tool too early.
+- The answer sounded in-character but violated state.
+- The model invented a memory.
+- The response followed the schema but ignored user intent.
+- The agent over-explained instead of acting.
+
+Keep these examples close to the prompt. They are regression tests for product behavior.
+
+## Source
+
+This essay was distilled from [Anthropic Prompting 101 Deep Read: Treat Prompting as Testable Product Logic](https://zhipu-ai.feishu.cn/docx/QWe9dkXUMonYkGxDJlmcjzqGnqe).

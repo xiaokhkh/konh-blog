@@ -1,0 +1,58 @@
+---
+title: "Evaluate AI Products by Behavior, Not Just Pass or Fail"
+description: "Why AI product test records should preserve behavior, context, and qualitative failure modes instead of only recording binary outcomes."
+pubDate: 2026-05-16
+tags: ["ai", "evaluation", "product", "qa"]
+---
+
+AI product evaluation cannot stop at pass or fail.
+
+Many failures are qualitative. An answer can be technically correct but emotionally wrong. A state update can be valid but poorly explained. A character can remember the right fact while violating what it should know. A tool call can succeed while making the interaction feel slow or unnatural.
+
+Good evaluation records behavior in context.
+
+## What to capture
+
+A useful AI product test record should preserve:
+
+- what the user tried to do,
+- what context was available,
+- what the agent inferred,
+- what the model said,
+- what tools or state changes occurred,
+- where the interaction felt believable,
+- where it felt broken,
+- which case should become a regression fixture.
+
+This gives future prompt, model, and product changes something real to test against.
+
+## Staging runs are raw material
+
+Repeated staging runs can look like noise, but they are valuable if they preserve interaction texture. Each run can reveal a different failure class:
+
+- latency,
+- wrong speaker selection,
+- bad tone,
+- missing memory,
+- incorrect state commitment,
+- hidden permission leakage,
+- weak recovery after user correction.
+
+The point is not to publish every run. The point is to mine the runs for stable product lessons.
+
+## Convert failures into fixtures
+
+Every meaningful failure should become a small reusable fixture:
+
+- user input,
+- relevant state,
+- expected behavior,
+- unacceptable behavior,
+- observed failure,
+- fixed behavior.
+
+This turns subjective AI QA into an engineering loop. The product can still be creative, but the failures become harder to repeat silently.
+
+## Source
+
+This essay was distilled from the recent staging and location-chat evaluation records, including the April 24 to May 6 chat, location, and memory test reports in the [Recent Lark Documents](/posts/2026-05-16-recent-lark-documents/) index.
