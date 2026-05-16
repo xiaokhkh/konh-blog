@@ -6,9 +6,23 @@ import { getCollection } from 'astro:content';
 const posts = (await getCollection('posts'))
   .filter((post) => !post.data.draft)
   .sort((a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf());
+
+const siteUrl = Astro.site ?? new URL(Astro.url.origin);
+const homeUrl = new URL('/', siteUrl).toString();
+const websiteJsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'WebSite',
+  name: 'konh',
+  url: homeUrl,
+  description: 'A public notebook for AI product work, agent systems, prompting, memory, and practical engineering notes.',
+  inLanguage: 'en',
+};
 ---
 
-<BaseLayout>
+<BaseLayout
+  description="A public notebook for AI product work, agent systems, prompting, memory, and practical engineering notes."
+  jsonLd={websiteJsonLd}
+>
   <div class="container home-shell">
     <section class="page-character" aria-label="Konh character animation">
       <div class="sleeping-konh">

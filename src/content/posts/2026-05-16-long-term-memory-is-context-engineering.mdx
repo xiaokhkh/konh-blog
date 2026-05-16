@@ -11,6 +11,12 @@ An LLM does not browse a database at generation time. It sees its parameters, th
 
 That makes memory a context engineering problem.
 
+## Key takeaways
+
+- Storing history is not remembering; memory only matters when it becomes useful future context.
+- Raw transcripts, memory items, evidence units, graph edges, and relationship state solve different problems.
+- Good retrieval uses small semantic evidence units rather than large mixed paragraphs.
+
 ## Raw history is not memory
 
 Raw conversation logs are useful, but they are not the thing that should usually enter the prompt. They are too long, too repetitive, too mixed, and often stale.

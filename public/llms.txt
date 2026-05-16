@@ -1,0 +1,20 @@
+# konh
+
+konh is a public notebook for AI product work, agent systems, prompting, long-term memory, evaluation, and practical engineering notes.
+
+## Core Essays
+
+- [Prompts Are Product Logic](https://konh-blog.vercel.app/posts/2026-05-16-prompts-are-product-logic/): Treat prompts as versioned, testable product behavior rather than disposable copy.
+- [Long-Term Memory Is Context Engineering](https://konh-blog.vercel.app/posts/2026-05-16-long-term-memory-is-context-engineering/): A reusable framing for AI memory systems where past experience only matters when it becomes high-quality future context.
+- [Chat-First Agent Systems Need Settlement](https://konh-blog.vercel.app/posts/2026-05-16-chat-first-agent-systems-need-settlement/): A lightweight model for turning conversational agent behavior into durable state.
+- [Evaluate AI Products by Behavior, Not Just Pass or Fail](https://konh-blog.vercel.app/posts/2026-05-16-evaluate-ai-products-by-behavior/): A practical evaluation pattern for preserving context, behavior, and qualitative failure modes.
+- [Map the AI-Native System, Not Just the Model](https://konh-blog.vercel.app/posts/2026-05-16-map-the-ai-native-system/): A system map for AI-native products across infrastructure, context, workflow, distribution, and compounding use.
+
+## Source Index
+
+- [Recent Lark Documents](https://konh-blog.vercel.app/posts/2026-05-16-recent-lark-documents/): Full English index of recent Lark documents used as source material for the essays above.
+
+## Site Feeds
+
+- [RSS](https://konh-blog.vercel.app/rss.xml)
+- [Sitemap](https://konh-blog.vercel.app/sitemap-index.xml)

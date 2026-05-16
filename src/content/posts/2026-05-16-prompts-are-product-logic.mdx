@@ -9,6 +9,12 @@ A prompt is not just text. In an AI product, a prompt can decide routing, tone, 
 
 Once a prompt is treated as product logic, it deserves the same operational discipline as code.
 
+## Key takeaways
+
+- Prompts that affect routing, memory, tools, or tone should be treated as versioned product contracts.
+- Prompt tests should use real product fixtures, including ambiguous inputs and known failures.
+- The context shape around a prompt is part of the behavior and should change deliberately.
+
 ## The contract
 
 Every important prompt should have a clear contract:

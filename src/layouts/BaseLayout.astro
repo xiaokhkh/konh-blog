@@ -8,12 +8,14 @@ type Props = {
   title?: string;
   description?: string;
   image?: string;
+  jsonLd?: Record<string, unknown> | Record<string, unknown>[];
 };
 
 const {
   title = 'konh',
   description = 'A fast, Git-owned Astro blog for essays, notes, and durable personal publishing.',
   image = '/images/covers/ops-field.svg',
+  jsonLd,
 } = Astro.props;
 
 const canonical = new URL(Astro.url.pathname, Astro.site ?? Astro.url.origin);
@@ -34,6 +36,7 @@ const canonical = new URL(Astro.url.pathname, Astro.site ?? Astro.url.origin);
     <meta property="og:image" content={image} />
     <meta name="twitter:card" content="summary_large_image" />
     <link rel="alternate" type="application/rss+xml" title="konh RSS" href="/rss.xml" />
+    {jsonLd && <script is:inline type="application/ld+json" set:html={JSON.stringify(jsonLd)} />}
     <Analytics />
   </head>
   <body>
