@@ -1,4 +1,4 @@
-# Konh Blog Content Model
+# konh Content Model
 
 Posts live in `src/content/posts/*.mdx` and are loaded by `src/content.config.ts` with Astro 6 `glob`.
 

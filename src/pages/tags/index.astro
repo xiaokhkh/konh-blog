@@ -19,8 +19,16 @@ const tags = Object.entries(tagCounts).sort(([a], [b]) => a.localeCompare(b));
       <h1>Tags</h1>
       <span class="meta-line">{tags.length} topics</span>
     </div>
-    <div class="tag-row">
-      {tags.map(([tag, count]) => <a class="tag" href={`/tags/${encodeURIComponent(tag)}/`}>{tag} · {count}</a>)}
-    </div>
+    {
+      tags.length > 0 ? (
+        <div class="tag-row">
+          {tags.map(([tag, count]) => <a class="tag" href={`/tags/${encodeURIComponent(tag)}/`}>{tag} · {count}</a>)}
+        </div>
+      ) : (
+        <div class="empty-state">
+          <p>No tags yet.</p>
+        </div>
+      )
+    }
   </section>
 </BaseLayout>

@@ -1,13 +1,13 @@
 ---
 name: konh-blog-cms
-description: Operate the Konh Blog Astro/MDX publishing system as a CMS agent. Use when Codex needs to create, edit, organize, validate, or publish Konh Blog posts; update tags, frontmatter, covers, RSS, Sveltia CMS config, Giscus settings, or deployment metadata; migrate drafts from Notion or other sources into repo-owned Markdown/MDX; or run the blog's content QA and GitHub publish workflow.
+description: Operate the konh Astro/MDX publishing system as a CMS agent. Use when Codex needs to list, read, create, update, delete, organize, validate, or publish konh blog posts; update tags, frontmatter, covers, RSS, Sveltia CMS config, Giscus settings, or deployment metadata; migrate drafts from Notion or other sources into repo-owned Markdown/MDX; or run the blog's content QA and GitHub publish workflow.
 ---
 
-# Konh Blog CMS
+# konh CMS
 
 ## Overview
 
-Act as a content operations agent for the project-local Konh Blog repo. Treat Git/MDX as the canonical CMS, keep assets self-hosted under `public/images`, and validate every meaningful content or config change with Astro before publishing.
+Act as a content operations agent for the project-local konh blog repo. Treat Git/MDX as the canonical CMS, keep assets self-hosted under `public/images`, and validate every meaningful content or config change with Astro before publishing.
 
 ## First Steps
 
@@ -21,21 +21,32 @@ rg "title:|tags:|draft:" src/content/posts
 
 3. For content schema details, read `references/content-model.md` only when you need frontmatter specifics or route/RSS behavior.
 
-## Create A Post
+## Content CRUD
 
-Prefer the bundled script so filenames and frontmatter stay consistent:
+Prefer the bundled CRUD script so filenames and frontmatter stay consistent:
 
 ```bash
-node .codex/skills/konh-blog-cms/scripts/new-post.mjs \
+node .codex/skills/konh-blog-cms/scripts/content.mjs list
+node .codex/skills/konh-blog-cms/scripts/content.mjs show --slug 2026-05-16-example
+node .codex/skills/konh-blog-cms/scripts/content.mjs create \
   --title "Post title" \
   --description "Short summary" \
   --tags "astro,publishing" \
   --date 2026-05-15
+node .codex/skills/konh-blog-cms/scripts/content.mjs update \
+  --slug 2026-05-15-post-title \
+  --description "Better summary" \
+  --tags "astro,cms"
+node .codex/skills/konh-blog-cms/scripts/content.mjs delete \
+  --slug 2026-05-15-post-title \
+  --yes
 ```
 
-Use `--draft` when the post should not appear in lists or RSS. Use `--cover /images/covers/name.svg --cover-alt "Description"` when a cover already exists.
+Use `--draft` when a new post should not appear in lists or RSS. Use `update --draft true`, `update --draft false`, `update --publish`, or `update --unpublish` for publication state changes. Use `--cover /images/covers/name.svg --cover-alt "Description"` when a cover already exists.
 
-After creating the skeleton, write the article directly in the MDX file. Use concise headings, meaningful summaries, and durable links.
+`scripts/new-post.mjs` remains as a compatibility wrapper around `content.mjs create`.
+
+After creating a skeleton, write the article directly in the MDX file. Use concise headings, meaningful summaries, and durable links.
 
 ## Edit Existing Content
 
@@ -77,5 +88,6 @@ Do not commit `dist`, `node_modules`, `.astro`, or local `.env` files.
 
 ## Resources
 
-- `scripts/new-post.mjs`: deterministic post skeleton creator.
+- `scripts/content.mjs`: deterministic content list/show/create/update/delete operations.
+- `scripts/new-post.mjs`: compatibility wrapper for `content.mjs create`.
 - `references/content-model.md`: frontmatter schema and routing rules.

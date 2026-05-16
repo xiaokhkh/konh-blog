@@ -13,18 +13,24 @@ const posts = (await getCollection('posts'))
       <h1>Archive</h1>
       <span class="meta-line">{posts.length} posts</span>
     </div>
-    <div class="archive-list">
-      {
-        posts.map((post) => (
-          <a class="archive-row" href={`/posts/${post.id.replace(/\.(md|mdx)$/, '')}/`}>
-            <span class="meta-line">
-              {post.data.pubDate.toLocaleDateString('en', { year: 'numeric', month: 'short', day: '2-digit' })}
-            </span>
-            <strong>{post.data.title}</strong>
-            <span class="meta-line">{post.data.tags[0] ?? 'note'}</span>
-          </a>
-        ))
-      }
-    </div>
+    {
+      posts.length > 0 ? (
+        <div class="archive-list">
+          {posts.map((post) => (
+            <a class="archive-row" href={`/posts/${post.id.replace(/\.(md|mdx)$/, '')}/`}>
+              <span class="meta-line">
+                {post.data.pubDate.toLocaleDateString('en', { year: 'numeric', month: 'short', day: '2-digit' })}
+              </span>
+              <strong>{post.data.title}</strong>
+              <span class="meta-line">{post.data.tags[0] ?? 'note'}</span>
+            </a>
+          ))}
+        </div>
+      ) : (
+        <div class="empty-state">
+          <p>No published posts yet.</p>
+        </div>
+      )
+    }
   </section>
 </BaseLayout>

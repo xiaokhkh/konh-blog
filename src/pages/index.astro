@@ -20,8 +20,16 @@ const posts = (await getCollection('posts'))
       <h2 id="latest-posts">Latest essays</h2>
       <a href="/archive/">All posts</a>
     </div>
-    <div class="post-grid">
-      {posts.slice(0, 6).map((post) => <PostCard post={post} />)}
-    </div>
+    {
+      posts.length > 0 ? (
+        <div class="post-grid">
+          {posts.slice(0, 6).map((post) => <PostCard post={post} />)}
+        </div>
+      ) : (
+        <div class="empty-state">
+          <p>No essays yet. New posts will appear here after they are added through the repo CMS workflow.</p>
+        </div>
+      )
+    }
   </section>
 </BaseLayout>
