@@ -9,27 +9,29 @@ const posts = (await getCollection('posts'))
 ---
 
 <BaseLayout>
-  <section class="container page-character" aria-label="Konh character animation">
-    <div class="sleeping-konh">
-      <video src="/media/konh-idle.webm" autoplay muted loop playsinline></video>
-    </div>
-  </section>
+  <div class="container home-shell">
+    <section class="page-character" aria-label="Konh character animation">
+      <div class="sleeping-konh">
+        <video src="/media/konh-idle.webm" autoplay muted loop playsinline></video>
+      </div>
+    </section>
 
-  <section class="container home-posts" aria-labelledby="latest-posts">
-    <div class="section-head">
-      <h2 id="latest-posts">Latest essays</h2>
-      <a href="/archive/">All posts</a>
-    </div>
-    {
-      posts.length > 0 ? (
-        <div class="post-grid">
-          {posts.slice(0, 6).map((post) => <PostCard post={post} />)}
-        </div>
-      ) : (
-        <div class="empty-state">
-          <p>No essays yet. New posts will appear here after they are added through the repo CMS workflow.</p>
-        </div>
-      )
-    }
-  </section>
+    <section class="home-posts" aria-labelledby="latest-posts">
+      <div class="section-head">
+        <h2 id="latest-posts">Latest essays</h2>
+        <a href="/archive/">All posts</a>
+      </div>
+      {
+        posts.length > 0 ? (
+          <div class="post-grid">
+            {posts.slice(0, 6).map((post) => <PostCard post={post} />)}
+          </div>
+        ) : (
+          <div class="empty-state">
+            <p>No essays yet. New posts will appear here after they are added through the repo CMS workflow.</p>
+          </div>
+        )
+      }
+    </section>
+  </div>
 </BaseLayout>

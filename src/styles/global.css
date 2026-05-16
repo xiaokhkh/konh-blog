@@ -77,7 +77,6 @@ input {
 }
 
 .site-header {
-  border-bottom: 1px solid var(--line);
   background: rgba(21, 21, 21, 0.86);
   backdrop-filter: blur(12px);
 }
@@ -118,28 +117,42 @@ input {
   color: var(--ink);
 }
 
+.home-shell {
+  position: relative;
+  min-height: 430px;
+  padding-top: clamp(64px, 9vw, 96px);
+}
+
 .page-character {
-  padding: 34px 0 0;
+  position: absolute;
+  top: clamp(42px, 8vw, 78px);
+  right: clamp(-46px, -5vw, -18px);
+  z-index: 0;
+  padding: 0;
+  pointer-events: none;
 }
 
 .sleeping-konh {
-  width: min(190px, 52vw);
-  height: clamp(150px, 42vw, 186px);
-  margin-left: clamp(18px, 7vw, 72px);
+  width: clamp(210px, 24vw, 286px);
+  height: clamp(172px, 23vw, 260px);
+  margin: 0;
   overflow: hidden;
   border-radius: 0;
   background: transparent;
+  transform: rotate(2deg);
 }
 
 .sleeping-konh video {
   width: 100%;
   height: auto;
   object-fit: contain;
-  transform: translateY(-58px);
+  transform: translateY(clamp(-90px, -8vw, -62px));
 }
 
-.home-posts .section-head {
-  margin-top: 10px;
+.home-posts {
+  position: relative;
+  z-index: 1;
+  max-width: 560px;
 }
 
 .section-head {
@@ -147,9 +160,8 @@ input {
   align-items: baseline;
   justify-content: space-between;
   gap: 18px;
-  margin: 34px 0 10px;
-  padding-top: 18px;
-  border-top: 1px solid var(--line);
+  margin: 0 0 18px;
+  padding-top: 0;
 }
 
 .section-head h1,
@@ -175,8 +187,7 @@ input {
 
 .post-card {
   display: block;
-  padding: 24px 0;
-  border-bottom: 1px solid var(--line);
+  padding: 22px 0;
   color: var(--ink);
   text-decoration: none;
 }
@@ -245,7 +256,6 @@ input {
 
 .archive-list {
   display: grid;
-  border-top: 1px solid var(--line);
 }
 
 .archive-row {
@@ -254,7 +264,6 @@ input {
   gap: 16px;
   align-items: baseline;
   padding: 16px 0;
-  border-bottom: 1px solid var(--line);
   color: var(--ink);
   text-decoration: none;
 }
@@ -264,8 +273,7 @@ input {
 }
 
 .empty-state {
-  padding: 26px 0;
-  border-bottom: 1px solid var(--line);
+  padding: 20px 0;
   color: var(--muted);
 }
 
@@ -288,7 +296,6 @@ input {
 }
 
 .article-header {
-  border-bottom: 1px solid var(--line);
   padding-bottom: 28px;
 }
 
@@ -394,7 +401,6 @@ input {
 
 .site-footer {
   margin-top: 72px;
-  border-top: 1px solid var(--line);
   padding: 28px 0 40px;
   color: var(--faint);
   font-size: 0.86rem;
@@ -419,14 +425,19 @@ input {
     justify-content: flex-start;
   }
 
+  .home-shell {
+    min-height: 500px;
+    padding-top: 246px;
+  }
+
   .page-character {
-    padding-top: 40px;
+    top: -18px;
+    right: -26px;
   }
 
   .sleeping-konh {
-    width: min(230px, 70vw);
-    height: clamp(170px, 52vw, 210px);
-    margin-left: clamp(34px, 21vw, 78px);
+    width: min(260px, 72vw);
+    height: clamp(190px, 56vw, 236px);
   }
 
   .archive-row {
