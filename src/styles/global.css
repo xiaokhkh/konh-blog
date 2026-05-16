@@ -393,8 +393,15 @@ input {
 .selection-translator-actions {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 8px;
+}
+
+.selection-translator-actions span {
+  margin-right: auto;
+  color: var(--faint);
+  font-size: 0.78rem;
+  font-weight: 650;
 }
 
 .selection-translator button {
@@ -408,6 +415,11 @@ input {
 
 .selection-translator button:hover {
   background: #363636;
+}
+
+.selection-translator button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
 }
 
 .selection-translator-result {
