@@ -1,5 +1,6 @@
 ---
 import BaseLayout from '@/layouts/BaseLayout.astro';
+import SelectionTranslator from '@/components/SelectionTranslator.astro';
 import { getCollection, render } from 'astro:content';
 
 export async function getStaticPaths() {
@@ -73,6 +74,7 @@ const hasGiscus =
           .map((heading) => <a href={`#${heading.slug}`}>{heading.text}</a>)
       }
     </aside>
+    <SelectionTranslator />
   </article>
   {
     hasGiscus && (

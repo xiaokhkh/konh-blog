@@ -1,79 +1,95 @@
 ---
 title: "Long-Term Memory Is Context Engineering"
-description: "A reusable framing for AI memory systems: memory matters only when past experience becomes high-quality future context."
+description: "A source-aligned synthesis of the long-term memory documents: raw history, memory items, embedding thunks, graph edges, recall planning, and context composition."
 pubDate: 2026-05-16
 tags: ["ai", "memory", "agents", "engineering"]
 ---
 
-The first mistake in long-term memory design is believing that storing history means the AI remembers.
+This essay is the English blog version of the long-term memory Lark documents, especially:
 
-An LLM does not browse a database at generation time. It sees its parameters, the current prompt, and the context that the system chooses to place in front of it. A memory is useful only when it is recalled, compressed, ranked, permissioned, and inserted as high-quality context.
+- [Long-Term Memory Goal Implementation Design](https://zhipu-ai.feishu.cn/docx/NGIRdjXweoRpIhxrceacrJI1nlc)
+- [Recall Planner and Long-Term Memory Intermediate Data Design](https://zhipu-ai.feishu.cn/docx/NXXHdkbdwoPkMpxcqsbcfquon5d)
+- [Long-Term Memory System Issues and Refactor Plan](https://zhipu-ai.feishu.cn/docx/U2uadZY9WoiYdOxU8UvcAwhunpG)
+- [First Principles of Long-Term Memory: Organizing Better Context for LLMs Instead of Storing History](https://zhipu-ai.feishu.cn/docx/Ye3adRTJroLcScxfSzzcB7Byn9f)
+- [Embedding Thunk and Graph Recall Design](https://zhipu-ai.feishu.cn/docx/NpoedcHrHozyTGx6CgRcw2C3nmh)
 
-That makes memory a context engineering problem.
+The center of these documents is not "store more history." The center is: make past experience re-enter the model as high-quality, permission-aware, traceable context.
 
 ## Key takeaways
 
-- Storing history is not remembering; memory only matters when it becomes useful future context.
-- Raw transcripts, memory items, evidence units, graph edges, and relationship state solve different problems.
-- Good retrieval uses small semantic evidence units rather than large mixed paragraphs.
+- Memory is only useful when it becomes future prompt context.
+- The target architecture separates raw transcript, memory item, embedding thunk, graph edge, relationship state, and context composer.
+- The Recall Planner should be a lightweight rule-based plan selector by default, not an LLM on the hot path.
 
-## Raw history is not memory
+## Source alignment
 
-Raw conversation logs are useful, but they are not the thing that should usually enter the prompt. They are too long, too repetitive, too mixed, and often stale.
+The target implementation document reframes the work away from "Recall Planner as the main character." The planner becomes one component in a larger recall chain.
 
-Use raw history for:
+The source docs distinguish:
 
-- audit,
-- re-extraction,
-- debugging,
-- dispute resolution,
-- rebuilding derived memory.
+- current architecture vs target architecture,
+- raw memory vs intermediate recall data,
+- rule-based recall planning vs LLM-based reasoning,
+- text retrieval vs graph-constrained state,
+- subjective relationship state vs factual evidence.
 
-Use derived memory for generation.
+That is the important alignment: memory is a pipeline, not a single vector search call.
 
-## A better memory stack
+## The memory pipeline
 
-A practical stack separates several layers:
+A useful long-term memory stack has several layers:
 
-- Raw transcript: the full source record.
+- Raw transcript: the full source record for audit and re-extraction.
 - Memory item: a subjective summary of a meaningful experience.
-- Evidence unit: the smallest semantic unit that can support one claim.
+- Embedding thunk: a small semantic evidence unit that can be retrieved independently.
 - Graph edge: structured state such as ownership, location, visibility, or relationship.
 - Relationship state: accumulated attitude over time.
-- Context composer: the final policy for what enters the model.
+- Context composer: the final policy for what enters the prompt.
 
-Each layer solves a different problem. Collapsing all of them into one vector store usually creates noisy retrieval and weak explanations.
+Each layer answers a different question. Collapsing them into one "memory" table makes recall noisy and hard to debug.
 
-## Evidence units beat giant memories
+## Embedding thunks are evidence units
 
-The smallest useful retrieval unit should be semantically complete. It should answer one class of question and trace back to a source.
+The Embedding Thunk document is specific: a thunk is not a random token chunk. It is the smallest semantic unit that can independently support a claim.
 
-For example, a long memory may include travel, object transfer, a witness, emotion, and a future plan. Embedding the whole paragraph makes every query retrieve too much. A better system extracts smaller evidence units:
+A single memory may contain:
 
-- one location change,
-- one object state,
-- one relationship shift,
-- one plan,
-- one uncertainty claim.
+- a location change,
+- an object transfer,
+- a witness,
+- an emotional reaction,
+- a future plan,
+- an uncertainty boundary.
 
-This is not token chunking. It is semantic decomposition.
+Those should not be embedded as one mixed paragraph. They should become separate thunks so retrieval can answer precise questions such as "Who has the map?" or "Why does Jam trust the user more?"
 
-## Graphs stabilize what text cannot
+## Graph recall handles state and visibility
 
-Text carries nuance. Graphs carry operational constraints.
+Text retrieval is good at semantic similarity. It is weaker at state questions:
 
-Embeddings are good at semantic similarity. They are weak at deciding which object owner is current, whether a fact expired, which agent knows a secret, or whether two memories conflict.
+- Who currently owns the object?
+- Which fact is newer?
+- Which character knows this?
+- Did this relationship change expire?
+- Which evidence supports the answer?
 
-Use graphs to constrain context before generation:
+The graph layer helps constrain recall before the model answers. It does not replace text memory. It gives the system current state, visibility, and traceability.
 
-- who knows what,
-- which fact is current,
-- what changed state,
-- which source supports the claim,
-- what should not be said by this speaker.
+## Recall Planner should stay lightweight
 
-The best system keeps text for nuance and uses graph state to prevent drift.
+The Recall Planner document explicitly says the planner should not default to LLM reasoning. The main path should be a rule-based plan selector.
+
+That keeps the hot path stable:
+
+- choose recall strategy,
+- select memory types,
+- apply visibility rules,
+- retrieve thunks and graph state,
+- compose compact context,
+- let the final model answer.
+
+Use an LLM in the planner only when the rule path is insufficient.
 
 ## Source
 
-This essay was distilled from the long-term memory documents, especially [Long-Term Memory Goal Implementation Design](https://zhipu-ai.feishu.cn/docx/NGIRdjXweoRpIhxrceacrJI1nlc), [First Principles of Long-Term Memory: Organizing Better Context for LLMs Instead of Storing History](https://zhipu-ai.feishu.cn/docx/Ye3adRTJroLcScxfSzzcB7Byn9f), and [Embedding Thunk and Graph Recall Design](https://zhipu-ai.feishu.cn/docx/NpoedcHrHozyTGx6CgRcw2C3nmh).
+See the documents linked at the top of this essay and the full [Recent Lark Documents](/posts/2026-05-16-recent-lark-documents/) index.

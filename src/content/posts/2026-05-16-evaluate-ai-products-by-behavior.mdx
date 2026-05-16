@@ -1,64 +1,83 @@
 ---
 title: "Evaluate AI Products by Behavior, Not Just Pass or Fail"
-description: "Why AI product test records should preserve behavior, context, and qualitative failure modes instead of only recording binary outcomes."
+description: "A source-aligned note from the staging chat and location-chat test reports: preserve behavior, transcripts, metrics, and regression cases."
 pubDate: 2026-05-16
 tags: ["ai", "evaluation", "product", "qa"]
 ---
 
-AI product evaluation cannot stop at pass or fail.
+This essay is the English synthesis of the April 24 to May 6 staging chat, location-chat, and minigame test reports in the [Recent Lark Documents](/posts/2026-05-16-recent-lark-documents/) index.
 
-Many failures are qualitative. An answer can be technically correct but emotionally wrong. A state update can be valid but poorly explained. A character can remember the right fact while violating what it should know. A tool call can succeed while making the interaction feel slow or unnatural.
-
-Good evaluation records behavior in context.
+The source documents are not only QA records. They show a useful evaluation style for AI products: capture behavior, context, transcript evidence, metrics, and the next regression target.
 
 ## Key takeaways
 
-- AI product tests should preserve behavior, context, and failure texture, not only pass/fail status.
-- Staging runs are useful raw material when they become reusable regression fixtures.
-- Qualitative failures such as wrong tone, hidden knowledge leakage, or weak recovery need explicit test cases.
+- AI product tests should preserve behavior and context, not just a pass/fail outcome.
+- Transcript images, raw transcript, speed metrics, and issue lists each serve a different review purpose.
+- Good test reports convert qualitative failures into reusable regression cases.
 
-## What to capture
+## Source alignment
 
-A useful AI product test record should preserve:
+The staging reports repeatedly track concrete dimensions:
 
-- what the user tried to do,
-- what context was available,
-- what the agent inferred,
-- what the model said,
-- what tools or state changes occurred,
-- where the interaction felt believable,
-- where it felt broken,
-- which case should become a regression fixture.
+- world channel behavior,
+- single chat behavior,
+- location chat behavior,
+- location minigame entry,
+- participant drift,
+- fallback rate,
+- first delta latency,
+- turn completion latency,
+- transcript quality,
+- visible agent reply count.
 
-This gives future prompt, model, and product changes something real to test against.
+The May 6 reports also show the value of visual evidence: summary board images and imagegen transcript cards were inserted at the top of the Lark docs, while raw text and metrics stayed below for audit.
 
-## Staging runs are raw material
+## Record the failure shape
 
-Repeated staging runs can look like noise, but they are valuable if they preserve interaction texture. Each run can reveal a different failure class:
+The most useful source reports describe failure shape, not only status.
 
-- latency,
-- wrong speaker selection,
-- bad tone,
-- missing memory,
-- incorrect state commitment,
-- hidden permission leakage,
-- weak recovery after user correction.
+Examples from the test notes include:
 
-The point is not to publish every run. The point is to mine the runs for stable product lessons.
+- start challenge was dragged by old normal-chat context,
+- visible replies mixed in old history or replay fragments,
+- wrap-up could fail because characters continued the old gameplay,
+- suggestions improved from zero in one run to most turns in a later run,
+- a `role='system'` write failure blocked a new-player challenge offer,
+- world channel fallback disappeared in one retest but public discussion still needed follow-up.
 
-## Convert failures into fixtures
+These are better than "failed" because they tell the next engineer what to reproduce.
 
-Every meaningful failure should become a small reusable fixture:
+## Separate metrics from judgment
 
-- user input,
-- relevant state,
+The reports keep both numbers and product judgment:
+
+- first stream latency,
+- turn done latency,
+- number of real agent replies,
+- fallback count,
+- participant drift,
+- whether the scene felt natural,
+- whether the user could repair or wrap up the flow.
+
+That combination matters. An AI turn can pass the API test and still feel wrong to the user.
+
+## Convert reports into regression fixtures
+
+Each meaningful issue should become a small fixture:
+
+- setup state,
+- user message,
 - expected behavior,
 - unacceptable behavior,
 - observed failure,
-- fixed behavior.
+- fixed behavior,
+- source transcript or screenshot.
 
-This turns subjective AI QA into an engineering loop. The product can still be creative, but the failures become harder to repeat silently.
+That is how subjective AI QA becomes an engineering loop.
 
 ## Source
 
-This essay was distilled from the recent staging and location-chat evaluation records, including the April 24 to May 6 chat, location, and memory test reports in the [Recent Lark Documents](/posts/2026-05-16-recent-lark-documents/) index.
+- [Zoooo Staging Chat SOP Test Report, May 6 Run 2](https://zhipu-ai.feishu.cn/docx/Xw8AdwYuqoItNlxpQfjcglEgnCg)
+- [May 6, Run 2: Staging Location Chat Minigame Test on Presence and Relationship Settlement](https://zhipu-ai.feishu.cn/docx/IQFjd0rLsonjVcxIvXlc3S9hnfc)
+- [Staging Location Chat Minigame Real Test, May 6 Run 1](https://zhipu-ai.feishu.cn/docx/LzyZdVCHfoi4wHxgCQwcmmRrn4c)
+- [Recent Lark Documents](/posts/2026-05-16-recent-lark-documents/)

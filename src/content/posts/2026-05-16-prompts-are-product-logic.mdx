@@ -1,23 +1,37 @@
 ---
 title: "Prompts Are Product Logic"
-description: "A practical note on treating prompts as versioned, testable product behavior instead of disposable natural-language copy."
+description: "A source-aligned note from the Anthropic Prompting 101 deep read: prompts should be treated as testable product behavior."
 pubDate: 2026-05-16
 tags: ["ai", "prompting", "product", "engineering"]
 ---
 
-A prompt is not just text. In an AI product, a prompt can decide routing, tone, tool use, memory access, output shape, safety boundaries, and recovery behavior. That makes it product logic written in natural language.
+This essay is the English blog version of the Lark document [Anthropic Prompting 101 Deep Read: Treat Prompting as Testable Product Logic](https://zhipu-ai.feishu.cn/docx/QWe9dkXUMonYkGxDJlmcjzqGnqe).
 
-Once a prompt is treated as product logic, it deserves the same operational discipline as code.
+The source document is not just a list of prompt tips. Its useful claim is stronger: once a prompt changes product behavior, it should be managed like product logic.
 
 ## Key takeaways
 
-- Prompts that affect routing, memory, tools, or tone should be treated as versioned product contracts.
-- Prompt tests should use real product fixtures, including ambiguous inputs and known failures.
-- The context shape around a prompt is part of the behavior and should change deliberately.
+- A prompt that controls routing, memory, tools, refusal, tone, or output shape is part of the product contract.
+- Prompt changes should be tested against real product fixtures, not only against clean demo inputs.
+- The surrounding context schema is part of the prompt. Changing it changes behavior.
 
-## The contract
+## What the source document contributes
 
-Every important prompt should have a clear contract:
+The source document frames prompting as an engineering surface. That matters because prompt work often lives in an ambiguous place: too important to be casual copy, but too informal to receive code-level discipline.
+
+The practical interpretation is:
+
+- A prompt has responsibilities.
+- A prompt has inputs.
+- A prompt has expected outputs.
+- A prompt has known failure modes.
+- A prompt should have regression examples.
+
+This is the same mental model used for product logic, just expressed in natural language.
+
+## Treat the prompt as a contract
+
+Every important prompt should answer five questions:
 
 - What behavior does it own?
 - What context does it expect?
@@ -25,51 +39,37 @@ Every important prompt should have a clear contract:
 - What should it refuse, ignore, or escalate?
 - What historical failures must stay fixed?
 
-Without that contract, prompt iteration becomes guesswork. A new version may improve one demo while breaking three invisible cases.
+Without this contract, prompt iteration becomes non-repeatable. One edit may improve a visible demo while breaking memory use, tool timing, or tone in older conversations.
 
-## Test prompts with product fixtures
+## Test against product fixtures
 
-Prompt evaluation should start from real product fixtures, not ideal examples.
+The source document's "testable product logic" framing points to a better prompt workflow: keep fixtures.
 
 Useful fixtures include:
 
-- common happy paths,
+- common successful flows,
 - ambiguous user requests,
-- malformed context,
-- long conversation history,
 - stale memory,
 - conflicting instructions,
-- cases where the model previously sounded wrong.
+- malformed tool context,
+- long conversation history,
+- cases where the agent previously sounded wrong.
 
-The goal is not to make the prompt look clever. The goal is to preserve product behavior under realistic pressure.
+The prompt is not done when it sounds good once. It is done when it preserves the intended behavior across these fixtures.
 
-## Keep the context shape stable
+## Keep context shape stable
 
-Many prompt regressions are really context regressions. The same instruction behaves differently when the surrounding memory, schema, system message, examples, or tool descriptions change.
-
-For production prompts, version the context shape together with the prompt:
+Many prompt regressions are not caused by the instruction text itself. They are caused by changes around the prompt:
 
 - section names,
-- data order,
-- required fields,
-- optional fields,
-- retrieval limits,
-- formatting constraints.
+- memory order,
+- tool descriptions,
+- schema fields,
+- retrieved context length,
+- examples and counterexamples.
 
-If a prompt depends on a stable section called `Relevant memory`, changing that section into a mixed block of raw chat and inferred facts is a product change, not a harmless copy edit.
-
-## Preserve failure examples
-
-The most valuable prompt examples are often failures:
-
-- The agent used a tool too early.
-- The answer sounded in-character but violated state.
-- The model invented a memory.
-- The response followed the schema but ignored user intent.
-- The agent over-explained instead of acting.
-
-Keep these examples close to the prompt. They are regression tests for product behavior.
+If a prompt expects `Relevant memory` and that block becomes a mixed dump of raw chat, summaries, and inferred facts, the prompt has changed even if the instruction text is identical.
 
 ## Source
 
-This essay was distilled from [Anthropic Prompting 101 Deep Read: Treat Prompting as Testable Product Logic](https://zhipu-ai.feishu.cn/docx/QWe9dkXUMonYkGxDJlmcjzqGnqe).
+- [Anthropic Prompting 101 Deep Read: Treat Prompting as Testable Product Logic](https://zhipu-ai.feishu.cn/docx/QWe9dkXUMonYkGxDJlmcjzqGnqe)
