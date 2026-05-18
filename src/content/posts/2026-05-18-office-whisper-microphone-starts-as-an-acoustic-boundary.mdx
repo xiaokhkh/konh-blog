@@ -1,6 +1,6 @@
 ---
-title: 桌面私语麦克风：先做声学边界，再做麦克风
-description: 一个还没开工的项目复盘：把办公室低声说话的隐私问题，拆成声学结构、3D 打印件、验证路径和公开构建计划。
+title: Office Whisper Microphone Starts as an Acoustic Boundary
+description: A pre-build project retrospective on turning an office privacy problem into acoustic structure, 3D-printed parts, validation steps, and a public build plan.
 pubDate: 2026-05-18
 tags:
   - product
@@ -11,129 +11,129 @@ cover: /images/covers/office-whisper-microphone.png
 coverAlt: White 3D printed desktop whisper microphone with dark acoustic liner and round base
 ---
 
-这个项目还没有做出来，所以它不是传统意义上的完工复盘。
+This project does not exist yet, so this is not a conventional retrospective.
 
-更准确地说，它是一篇开工前的项目复盘：把一个模糊但强烈的需求，提前拆成产品判断、结构假设、工程约束和验证计划。
+It is a pre-build retrospective: a way to turn a vague but persistent need into product judgment, structural assumptions, engineering constraints, and a validation plan before the first prototype is printed.
 
-起点很简单：在办公室里，我想对着一个设备低声说话，让麦克风能收清楚，但旁边的人尽量听不到。
+The starting point is simple: in an office, I want to speak quietly into a device, have the microphone capture me clearly, and make it harder for nearby people to hear what I am saying.
 
-这句话听起来像是在找一个更好的麦克风。聊到后面才发现，真正的产品并不是“麦克风”，而是一个桌面声学边界。麦克风只是边界里面的一个元件。
+That sounds like a better microphone problem. After working through the design conversation, it became clear that the product is not really the microphone. The product is a desktop acoustic boundary. The microphone is only one component inside that boundary.
 
-## 问题不是收音，而是泄漏
+## The Problem Is Not Capture, It Is Leakage
 
-普通麦克风优化的是把声音收进去。这个项目要同时做两件相反的事：
+Normal microphones optimize for getting sound in. This project has to do two opposing jobs at the same time:
 
-- 对设备内部的麦克风来说，声音要足够近、足够清楚；
-- 对办公室环境来说，声音要尽量少扩散、少反射、少打扰别人。
+- For the microphone inside the device, the voice needs to be close and intelligible.
+- For the office around the device, the voice needs to spread less, reflect less, and disturb less.
 
-这也是为什么一开始不能只讨论麦克风模块。真正的第一性问题是：人的嘴、声学罩体、吸音内衬、桌面摆放和麦克风位置之间，能不能形成一个低声输入的稳定空间。
+That is why the first discussion cannot be only about the microphone module. The first-principles question is whether the mouth position, acoustic hood, absorbent liner, desk placement, and microphone location can form a stable low-volume input space.
 
-如果只有一个塑料外壳，它更可能反射声音，而不是吸收声音。3D 打印件解决的是外形、固定和装配；真正降低泄漏，还需要毛毡、吸音棉或者 EVA + 毛毡这类内衬材料。
+If the device is only a plastic shell, it is more likely to reflect sound than absorb it. The 3D-printed parts solve shape, fixture, and assembly. Reducing leakage still needs material: felt, acoustic foam, or an EVA and felt stack.
 
-这是一条很重要的分界线：外壳是结构件，不是声学答案。
+That boundary matters. The shell is structure. It is not the acoustic answer by itself.
 
-## 第一版产品形态
+## The First Product Shape
 
-当前设想是一台桌面私语麦克风：
+The current concept is a desktop whisper microphone:
 
-- 一个白色 3D 打印声学罩体，用户靠近开口低声说话；
-- 内部贴 6-8 mm 毛毡，或者 8-10 mm 吸音棉；
-- 罩体底部放一个小型麦克风模块；
-- 罩体通过支撑臂连接到底座；
-- 底座负责稳定、配重、防滑和走线；
-- 整机尽量保持办公室友好，不像录音棚设备，也不像夸张的游戏外设。
+- A white 3D-printed acoustic hood that the user speaks into at close range.
+- A 6-8 mm felt liner, or an 8-10 mm acoustic foam liner.
+- A small microphone module mounted near the lower interior of the hood.
+- A support arm connecting the hood to the base.
+- A base that handles stability, weight, anti-slip pads, and cable routing.
+- A visual language that feels office-friendly rather than like studio gear or an exaggerated gaming peripheral.
 
-对话里暂定的整机尺寸是 **宽 190 x 深 205 x 高 260 mm**。这个尺度刚好落在桌面设备区间：足够容纳声学空间，又不能大到让用户觉得尴尬。
+The working overall size is **190 x 205 x 260 mm**. That puts the object in a desktop-device range: large enough to create an acoustic volume, but not so large that using it feels socially awkward.
 
-## 结构拆分比效果图更重要
+## The Part Split Matters More Than the Render
 
-这个项目最有价值的推进，不是生成了一张漂亮的产品图，而是被迫把结构拆开。
+The most useful progress was not the product render. It was forcing the idea into parts.
 
-当前拆成九个部分：
+The current structure has nine pieces:
 
-- 前框；
-- 后壳；
-- 内衬压圈；
-- 麦克风上壳；
-- 麦克风下壳 / 安装座；
-- 支撑臂；
-- 底座上盖；
-- 底座下盖；
-- 理线盖。
+- Front frame.
+- Rear shell.
+- Liner pressure ring.
+- Microphone top shell.
+- Microphone lower shell and mount.
+- Support arm.
+- Base top cover.
+- Base bottom cover.
+- Optional cable cover.
 
-这个拆分让问题从“想象一个产品”变成“哪些件可以打印、哪些件要锁附、哪些地方要留间隙、哪些地方会坏”。
+This split changes the work from imagining a product into asking practical questions: which parts can be printed, which parts need fasteners, where tolerances matter, and which joints are likely to fail.
 
-第一次结构方案里，连接关系并不合理。后面重新改成更接近真实装配的结构：
+The first structural approach had weak connection logic. The revised direction is closer to a real assembly:
 
-- 前框和后壳用舌槽定位，加 4 个 M3 隐藏螺丝；
-- 后壳和支撑臂用 U 形叉耳 + M5 转轴螺栓；
-- 支撑臂和底座用上下盖结构锁附；
-- 底座内部预留配重腔和理线槽；
-- 防滑脚垫、线缆出口、螺丝柱、热熔铜螺母都提前进入设计。
+- The front frame and rear shell use tongue-and-groove alignment plus four hidden M3 screws.
+- The rear shell and support arm use a clevis-style pivot with an M5 axle bolt.
+- The support arm locks into the base through a top-cover and bottom-cover structure.
+- The base reserves space for weight and cable routing.
+- Anti-slip pads, cable exit, screw bosses, and heat-set inserts are part of the design from the beginning.
 
-这是项目从概念走向可制造的节点。一个能看的图，不等于一个能装起来的产品。
+That is the point where the project moves from concept to manufacturable prototype. A good-looking image is not the same as a product that can be assembled.
 
-## 3D 打印不是万能生产方式
+## 3D Printing Is Not a Complete Manufacturing Strategy
 
-这类项目很容易陷入一个误区：既然是 3D 打印，那就所有东西都打印。
+This kind of project can fall into a simple trap: because the object is 3D printed, everything should be 3D printed.
 
-实际边界应该更清楚：
+The real boundary should be sharper:
 
-- 麦克风外壳可以打印，但真正收音仍然需要麦克风模块；
-- 小孔网罩可以打印，但 FDM 小孔低于 1.2 mm 很容易糊；
-- 壳体可以打印，但吸音材料不能靠塑料替代；
-- 转轴可以打印，但高频调节位置最好用螺丝、垫片和合理公差；
-- 底座可以打印，但稳定性可能需要配重，而不是单纯加厚塑料。
+- The microphone housing can be printed, but real capture still needs a microphone module.
+- The perforated grille can be printed, but FDM holes smaller than 1.2 mm are likely to clog or deform.
+- The shell can be printed, but plastic cannot replace absorbent material.
+- The pivot can include printed geometry, but repeated adjustment needs screws, washers, and sensible tolerances.
+- The base can be printed, but stability may need added weight rather than simply more plastic.
 
-打印参数也会直接影响体验。当前建议是 PLA / PETG，0.2 mm 层高，0.4 mm 喷嘴，3-4 圈壁线，15-20% 填充；后壳可以提高到 20-25% 填充，M3 通孔按 3.2 mm 留，插接间隙留 0.25-0.35 mm。
+Print parameters will also affect the experience. The current baseline is PLA or PETG, 0.2 mm layer height, 0.4 mm nozzle, 3-4 wall lines, and 15-20% infill. The rear shell can go to 20-25% infill. M3 through holes should be modeled around 3.2 mm, and mating features should leave 0.25-0.35 mm of clearance.
 
-这些数字不只是制造细节，它们会决定第一版能不能真的被装起来。
+These are not cosmetic details. They decide whether the first version can actually be assembled.
 
-## MVP 不应该先做电子系统
+## The MVP Should Not Start With Electronics
 
-这个项目的 MVP 不是一个完整智能硬件。
+The MVP for this project is not a complete smart hardware system.
 
-第一阶段甚至不应该急着接入复杂软件、降噪算法或者云端语音链路。最应该先验证的是物理问题：
+The first stage should not rush into software, noise suppression, or cloud voice pipelines. The first stage should validate the physical problem:
 
-- 用户低声说话时，麦克风能不能听清；
-- 0.5 米和 1 米外的人能不能明显听到；
-- 声音会不会从开口、后壳、底座缝隙泄漏；
-- 用户靠近说话是否舒服；
-- 罩体是否遮挡视线或占用过多桌面空间；
-- 内衬是否容易脏、是否容易更换；
-- 底座是否稳定，支撑臂是否会晃。
+- Can the microphone understand the user at low speaking volume?
+- Can someone 0.5 m or 1 m away clearly hear the speech?
+- Does sound leak through the opening, rear shell, or base gaps?
+- Is the close-speaking posture comfortable?
+- Does the hood block sight lines or consume too much desk space?
+- Does the liner get dirty, and can it be replaced?
+- Is the base stable, and does the support arm wobble?
 
-所以更合理的落地顺序是：
+The better build sequence is:
 
-1. 用纸板、泡棉、毛毡先做一个低保真声学漏斗，验证低声输入有没有意义。
-2. 打印罩体、前框、后壳和麦克风安装座，做第一版机械样件。
-3. 加入真实麦克风模块，测试清晰度和泄漏。
-4. 调整开口尺寸、内衬厚度、麦克风位置和底座重量。
-5. 最后再考虑软件链路，比如语音增强、实时转写或本地 AI 工作流。
+1. Build a low-fidelity acoustic funnel with cardboard, foam, and felt to test whether low-volume input is meaningful.
+2. Print the hood, front frame, rear shell, and microphone mount as a first mechanical sample.
+3. Add a real microphone module and test intelligibility and leakage.
+4. Tune opening size, liner thickness, microphone position, and base weight.
+5. Only then consider software paths such as voice enhancement, live transcription, or local AI workflows.
 
-如果第一步声学空间不成立，后面的智能化都是在修补一个错误的物理前提。
+If the acoustic space does not work, the later intelligence is only compensating for a bad physical premise.
 
-## 这次对话暴露了一个工作流问题
+## The Conversation Exposed a Workflow Issue
 
-还有一个很实际的收获：AI 生成的结构图、尺寸图和推文内容，不能只停留在聊天窗口里。
+There was also a practical workflow lesson: AI-generated structure drawings, dimension sheets, and launch copy should not remain trapped inside a chat window.
 
-如果我要把这个项目公开做出来，资产需要进入可复用的项目目录，而不是散落在会话里。总览图、单件图、封面图、推文草稿、尺寸表、装配说明，都应该有明确路径，方便 Codex 或后续脚本直接读取、整理和发布。
+If I am going to build this project in public, the assets need to move into reusable project directories. Overview diagrams, part sheets, cover images, tweet drafts, dimension tables, and assembly notes should have concrete paths so Codex or later scripts can read, refine, and publish them.
 
-这也是为什么这篇文章本身有价值。它不是在宣布一个已经完成的产品，而是在把构思过程变成项目资产。
+That is why this article is useful even before the object exists. It does not announce a finished product. It turns the thinking process into a project asset.
 
-## 我要保留的判断
+## What I Would Keep
 
-如果后面真的开工，我会保留这几个判断：
+If I start building this, I would keep these judgments:
 
-- 先验证声学边界，再选择麦克风模块；
-- 先做低保真物理样件，再做完整 3D 打印结构；
-- 结构图必须服务装配，不只是服务展示；
-- 吸音材料是核心部件，不是装饰；
-- 底座、走线、防滑、配重和清洁都属于第一版体验；
-- 第一版目标是证明“办公室低声输入”成立，而不是做一个复杂智能硬件。
+- Validate the acoustic boundary before choosing the microphone module.
+- Build a low-fidelity physical sample before printing the complete structure.
+- Make structural diagrams serve assembly, not only presentation.
+- Treat absorbent material as a core component, not decoration.
+- Include base stability, cable routing, anti-slip pads, added weight, and cleanability in the first version.
+- Make the first version prove office low-volume input, not a complex smart hardware system.
 
-这个项目真正有趣的地方，不是做一个白色麦克风。
+The interesting part of this project is not making a white microphone.
 
-它是在重新定义一个小型办公输入空间：人可以更自然地和机器说话，同时不把自己的声音强行广播给周围的人。
+It is redefining a small office input space: a way for someone to speak more naturally to a machine without broadcasting their voice to everyone nearby.
 
-如果这个边界能成立，后面再接语音转写、本地 AI、会议摘要或者桌面工作流，才会有产品意义。
+If that boundary works, then speech-to-text, local AI, meeting notes, or desktop workflows become meaningful layers on top of it.
