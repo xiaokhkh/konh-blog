@@ -1,0 +1,113 @@
+---
+title: "VoiceOps Is a Local-First Interaction Layer"
+description: "What building MLX VoiceOps taught me about latency, focus, fallback, and local AI product surfaces."
+pubDate: 2026-05-18
+tags: ["ai", "voice", "macos", "engineering"]
+cover: "/images/covers/voiceops-local-layer.svg"
+coverAlt: "Abstract desktop voice pipeline with waveform, local model block, and focused text target"
+---
+
+MLX VoiceOps started as a simple wish: hold **Fn**, speak, and have useful text land in the app that already has focus.
+
+That sounds like a speech-to-text shortcut. It is not. Once the result has to appear in Slack, Chrome, VS Code, or any arbitrary macOS text field without stealing focus, the product becomes a local interaction layer. The hard parts are not only ASR quality or model choice. They are timing, session boundaries, focus ownership, permissions, fallbacks, and whether the system behaves well when one local component is slow or unavailable.
+
+The project ended up as a SwiftUI menu bar app with local sidecars:
+
+- a fast ASR sidecar using `sherpa-onnx` for streaming preview,
+- a final ASR sidecar using `mlx-audio` for higher-quality transcription,
+- an offline LLM through Ollama for translation and cleanup,
+- macOS Accessibility and pasteboard injection for delivery into the focused app,
+- clipboard history so generated voice text becomes recoverable state, not a one-shot side effect.
+
+The main lesson: local AI products should be designed around the user's active surface, not around the model endpoint.
+
+## The Gesture Is the Product Boundary
+
+The most important design decision was using **Fn down** and **Fn up** as the session contract.
+
+On key down, VoiceOps captures the focused app, the focused accessibility element, any selected text, and starts audio capture. On key up, it stops streaming, runs final ASR, optionally routes through the offline LLM, and injects the result back into the original target.
+
+That boundary is stricter than a normal recording button. It gives the system a clear lifecycle:
+
+- before the session: capture intent and target,
+- during the session: stream partial feedback,
+- after the session: settle the final result exactly once.
+
+Without that contract, every later decision becomes ambiguous. Should the result go to the current app or the original app? Should the preview update keep running while final ASR starts? Should a short accidental press create an empty result? The Fn session model made those answers explicit.
+
+## Preview and Final Output Need Different Pipelines
+
+One early trap in voice products is trying to make one ASR path serve every need.
+
+VoiceOps splits the problem:
+
+- The preview path pushes small float32 PCM chunks into a `sherpa-onnx` sidecar and displays partial text quickly.
+- The final path builds a 16 kHz mono WAV from the full buffered session and sends it to an `mlx-audio` sidecar.
+
+The preview does not need to be perfect. It needs to reassure the user that audio is flowing and the system heard roughly the right thing. The final path can spend more work on trimming silence, warming the model, and producing text that is worth inserting.
+
+This split changed the UX. Instead of waiting for a model to finish, the user sees the interaction unfold. But the product still waits for a more stable final pass before it mutates the target app.
+
+## Latency Has to Be Logged at the System Boundary
+
+The useful logs were not generic debug strings. They were boundary timings:
+
+- `fast_asr_latency` for preview responsiveness,
+- `asr_perf` for receive, write, trim, inference, and total final ASR time,
+- `llm latency_offline_ms` for local model cost,
+- `inject` and `perf` logs for delivery into the target app.
+
+This made performance work less mystical. If the app felt slow, the question became concrete: is the delay in audio buffering, sidecar inference, LLM translation, or text injection?
+
+The final ASR sidecar also trims silence and warms the model in the background. Those are small implementation details, but they matter because voice interactions are judged on elapsed human time, not benchmark throughput.
+
+## Offline LLMs Need Hard Fallbacks
+
+The LLM step is intentionally modest: translate or polish the recognized voice text, usually through a local Ollama model. In the current local setup, the default model has moved to `gemma4:e2b`.
+
+The important product rule is not the model name. It is the timeout and fallback behavior.
+
+VoiceOps gives the offline LLM a bounded window. If it fails or takes too long, the router returns the ASR text directly. That turns the LLM from a blocking dependency into an optional improvement.
+
+This is the right shape for local AI utilities. Local models can be excellent, but they live in a messy environment: the server may not be running, the model may be cold, memory pressure may spike, or a prompt may return nothing useful. The user still expects the keystroke to complete.
+
+## Focus Is More Important Than UI
+
+The preview panel is intentionally non-interactive. It should never become key. The user's real workspace is the focused text field in another app.
+
+That forced VoiceOps to treat focus as data. At session start, it captures both the frontmost process and the focused Accessibility element. At injection time, it first tries to write through the captured target. If that fails, it prepares the target by activating the original app and setting the AX focused attribute, then falls back to paste-based injection. If translation fails to inject, it can still fall back to the raw ASR text.
+
+This part is easy to underestimate. In a desktop workflow tool, "where does the text land?" is a correctness property. A great transcript inserted into the wrong app is a failure.
+
+## Clipboard Is Infrastructure, Not a Hack
+
+Pasteboard injection looks like a hack until you treat it as an operating-system integration surface.
+
+VoiceOps marks internal pasteboard writes so clipboard history can distinguish generated text from user clipboard activity. It can store voice results with session IDs, selected text snapshots, the original voice intent, LLM usage, and the target bundle ID.
+
+That turns an ephemeral voice command into a recoverable event. If insertion fails, or if the user wants to reuse what they dictated, the system has a durable trail.
+
+The lesson is broader: local agents should preserve their own side effects. When an AI tool changes another app, it should also keep enough local history to explain and recover that change.
+
+## Permissions Are Part of the Product
+
+MLX VoiceOps depends on macOS microphone, Accessibility, and Input Monitoring permissions. These are not setup footnotes. They shape the interaction model.
+
+The app has to request microphone access before capture, Accessibility before injection, and Input Monitoring for global shortcuts. It also needs a preferences surface that shows permission state and opens the right System Settings panes.
+
+For local-first tools, permissions are not a deployment concern. They are a recurring UX concern. Every fallback path should assume a permission may be missing.
+
+## What I Would Keep
+
+The durable choices from this project are:
+
+- define the human gesture as the session boundary,
+- separate preview latency from final quality,
+- keep local models optional through timeouts and fallbacks,
+- capture the original focus target before doing model work,
+- instrument the pipeline at real product boundaries,
+- make generated text recoverable through local history.
+
+This is the difference between building a local model demo and building a local interaction layer. The model matters, but the product lives in the handoff: from gesture to audio, from audio to text, from text to intent, and from intent back into the user's active app.
+
+MLX VoiceOps is useful because it respects that handoff.
