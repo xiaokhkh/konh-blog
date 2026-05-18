@@ -200,7 +200,13 @@ input {
 }
 
 .post-card img {
-  display: none;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  margin-bottom: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--soft);
+  object-fit: cover;
 }
 
 .post-card-body {
@@ -317,7 +323,12 @@ input {
 }
 
 .article-cover {
-  display: none;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--soft);
+  object-fit: cover;
 }
 
 .article-body {

@@ -1,0 +1,143 @@
+---
+title: "Zoooo Portal Is a Presence Layer, Not Just a Desktop Pet"
+description: "A project retrospective on turning Zoooo Portal into a macOS presence surface with stateful animation, agent control, speech, bridge runtime, and release discipline."
+pubDate: 2026-05-18
+tags: ["ai", "agents", "macos", "product"]
+cover: "/images/covers/zoooo-portal-presence-layer.svg"
+coverAlt: "Abstract desktop portal with character state loops, agent bridge, and speech control surfaces"
+---
+
+Zoooo Portal looks like a desktop pet, but the project became more interesting once I stopped treating the pet as the product.
+
+The useful framing is: Zoooo Portal is a presence layer. It is a macOS-native surface that keeps a small character visible, expressive, and controllable while a local agent runtime does work behind it. The character is not decoration. It is the state display, entry point, notification channel, and embodied affordance for the system.
+
+That changes the engineering problem. The hard work is not only rendering a transparent video loop. It is making animation state, chat lifecycle, speech input, tool execution, desktop control, packaging, and release channels behave like one product.
+
+## The Pet Should Not Own State
+
+The master plan's most important rule is simple: product modules emit events, and only the presentation state machine decides what the Zopet should show.
+
+That separation matters because the app has many sources of intent:
+
+- direct pet interaction,
+- chat thinking and work phases,
+- browser deep links,
+- notifications,
+- speech input and playback,
+- delegated desktop actions,
+- host control tools from the bridge.
+
+If every module directly selected video assets, the pet would become a pile of visual side effects. Instead, `PortalStateMachine` normalizes those signals into loops, transients, transitions, bubbles, and return states.
+
+The durable idea is that visual state is a product contract. `idle`, `thinking`, `working`, and `needsAttention` are not filenames. They are the public language of the desktop companion.
+
+## Presence Needs a Runtime Grammar
+
+The project settled on three presentation primitives:
+
+- `Loop`: the long-lived ambient state,
+- `Transient`: a short action that temporarily interrupts the loop,
+- `Transition`: the bridge between loop states.
+
+That grammar gave the system a way to reason about interruptions. A notification can interrupt a tap interaction. Chat work can move the pet into `working`. A transient should return to the previous main state instead of corrupting the session.
+
+The later Jam asset work reinforced this. The expanded pack introduced more states like cinema, grow, stress relief, and collection, plus drag start, drag loop, and drag end. It also adopted an idle-hub routing rule: main state switches route through idle instead of requiring every possible direct transition.
+
+That is a product decision disguised as an asset rule. It keeps the animation graph shippable.
+
+## Drag Became a State-Machine Test
+
+Press-hold drag was a useful stress test because it is not just one animation.
+
+The interaction has phases:
+
+- play `drag-start`,
+- enter `drag-loop`,
+- when the hold ends, play `drag-end`,
+- return to the original main state,
+- defer unrelated state changes until the drag interaction completes.
+
+The tests around this flow are small, but they encode a real product invariant: tactile interaction should not lose the agent's underlying state. If the pet starts dragging while idle and a work state arrives during the loop, the app should not snap incoherently. It should finish the interaction and then settle into the new valid state.
+
+This is the kind of behavior that makes a companion feel intentional instead of merely animated.
+
+## The Bridge Is the Control Plane
+
+The Swift app owns the native surface. The Node `portal-bridge` owns the local agent runtime.
+
+That split is worth keeping. The bridge is not just a model proxy. It handles sessions, activation, model routing, tools, cron and heartbeat jobs, browser control, host control, Jam runtime behavior, preview ASR, and runtime snapshots. The OpenClaw-aligned standard makes the direction explicit: gateway, sessions, agents, orchestration, tools, model routing, storage, and observability should stay as separate layers.
+
+The lesson is that a desktop AI product needs a control plane even when everything runs locally. Otherwise UI code starts reaching into transcripts, model state, tool policy, and process management directly.
+
+Zoooo Portal's better boundary is:
+
+- Swift asks for state, chat, host control, speech, and presence updates.
+- The bridge owns runtime policy and agent execution.
+- The user experiences both as one desktop presence.
+
+## Local Sidecars Need Supervision
+
+Bundling the bridge forced a practical release question: what does "local" mean after the app leaves the developer machine?
+
+`PortalBridgeSupervisor` answers by resolving a packaged bridge, a packaged Node runtime, support directories, sockets, pid files, state files, logs, environment, and restart behavior. It also supports bundled preview ASR paths and model directories when the app is packaged with local sidecars.
+
+This moved the project from "works from repo root" toward "works as a shipped app." That is a major threshold. Local-first systems are only local-first if their runtimes are relocatable, observable, and recoverable after being packaged.
+
+The 0.1.6 work made this concrete by bundling the preview ASR runtime and zipformer model, then aligning release packaging with the `sidecars/portal-bridge/` layout.
+
+## Speech Is Two Experiences
+
+Voice in Zoooo Portal has two jobs.
+
+The first is preview: while the user is speaking, local preview ASR should provide enough partial text to make the system feel alive. The `PreviewSpeechRecognitionService` buffers chunks until a bridge preview session exists, then pushes base64-encoded audio chunks through the bridge.
+
+The second is final recognition: the app sends the completed WAV to the gateway-backed BigModel ASR endpoint, using the same activation token model as the LLM gateway. That final path can be slower because it is the committed user input.
+
+This mirrors a broader pattern: preview and settlement should be different paths. The preview path buys confidence. The final path owns correctness.
+
+## Packaging Is Product Work
+
+The README and changelog tell a story that is easy to miss in code:
+
+- dev app registration is needed for `zoooo-portal://` deep links,
+- local DMG builds bake a staging gateway by default,
+- stable builds bake the production gateway,
+- signed releases require Sparkle keys, notarization credentials, CDN buckets, and channel-specific metadata,
+- GitHub Actions needs a concrete secret contract.
+
+This is not release trivia. It determines whether a desktop companion can be trusted outside the developer machine.
+
+The gateway URL migration also showed why release configuration needs to be testable. Tests now assert that the gateway deployment prefix is preserved and that ASR/TTS URLs resolve correctly from a release node. When speech, activation, and model routing share deployment assumptions, packaging mistakes become product bugs.
+
+## Assets Need Their Own Operating System
+
+The Jam expanded asset pack is effectively a production system:
+
+- locked character reference,
+- fixed framing,
+- green-screen constraints,
+- loop and transition deliverables,
+- drag interaction deliverables,
+- QA checks for scale, edge cleanliness, seams, and drift,
+- final bundle layout under `Sources/Resources/Videos/<theme>/` and `Sources/Resources/Defaults/<theme>.json`.
+
+For an animated desktop agent, asset consistency is not polish. It is runtime stability. If one loop has scale drift or edge artifacts, the state machine can be correct and the product can still feel broken.
+
+The key decision was to isolate asset production from app runtime code. `asset-production/` and `scripts/asset-pipeline/` are workbench paths, not build inputs. The app consumes a clean final theme bundle.
+
+## What I Would Keep
+
+The strongest project lessons are:
+
+- treat the character as a presentation state machine, not a view,
+- use events as the boundary between product modules and visual state,
+- make transients return to a known main state,
+- keep Swift native lifecycle separate from the agent bridge control plane,
+- supervise local runtimes like shipped infrastructure,
+- split speech preview from final speech settlement,
+- make packaging, signing, activation, and gateway selection part of the product contract,
+- give animated assets their own QA and delivery pipeline.
+
+Zoooo Portal becomes durable when every layer has a job: Swift provides presence, the state machine provides grammar, the bridge provides agency, speech provides input, assets provide embodiment, and release automation turns the whole thing into something that can leave the repo.
+
+That is the real project shape. It is not a desktop pet with an agent attached. It is a local agent product with a visible body.
