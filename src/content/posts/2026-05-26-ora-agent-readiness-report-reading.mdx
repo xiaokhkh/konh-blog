@@ -1,0 +1,147 @@
+---
+title: "Ora Agent Readiness Report 精读：网站正在变成 Agent 的操作对象"
+description: "精读 Ora《The state of agent readiness》：这不是传统网站体验报告，而是在衡量网站能否被 agent 发现、理解、登录、调用，并完成真实任务。"
+pubDate: 2026-05-26
+tags:
+  - ai
+  - agents
+  - web
+  - product
+---
+
+## 整理说明
+
+整理方式：基于 Assaf Elovic 在 X 上转发的 Ora 报告入口，以及 Ora 于 2026-04-22 发布的 [The state of agent readiness](https://ora.ai/blog/state-of-agent-readiness-2026) 和 [How ora scores](https://ora.ai/methodology) 方法论页面整理。文末关于 agentic engineering 的延伸部分，参考了 [metaswarm](https://github.com/dsifry/metaswarm) 的项目说明。
+
+一句话回答最初的问题：是的，这基本可以理解成一份“agent 操作网站”的报告。但它不是在评测 agent 会不会像人一样点网页，而是在评测一个网站是否为 agent 提供了可发现、可理解、可认证、可调用、可交互的机器接口。
+
+## 一句话结论
+
+Ora 这份报告的核心判断是：大多数网站已经能被 agent 读取，但还不能被 agent 可靠地操作。
+
+这和过去的网站优化逻辑不同。SEO 关心搜索引擎能不能抓取和排序，PageSpeed 关心页面是否够快，传统 UX 关心人能不能看懂和点击。Agent readiness 关心的是另一件事：当用户把任务交给 ChatGPT、Claude 或其他 agent 时，这个 agent 能不能找到你、理解你、替用户登录、调用你的能力、处理错误，并把结果交还给人。
+
+如果不能，未来用户不一定会打开你的网站再慢慢点。更可能发生的是：agent 在候选服务里直接绕开你。
+
+## 这份报告到底测了什么
+
+Ora 说它用 Deep Scan 扫描了上万个产品网站，并让真实 agent session 跑完整流程。报告里提到的 agent 包括 ChatGPT、Claude、OpenClaw 等。它不是只看 HTML 里有没有某个字符串，而是探测协议握手、认证路径、MCP 能力、streaming、SDK、function calling、sitemap、llms.txt、robots policy 等具体表面。
+
+它的评分分成五层：
+
+- Discovery：agent 能不能找到你、抓取你、知道哪些页面值得看。
+- Identity：agent 能不能理解你是什么产品、卖给谁、能做什么。
+- Auth & Access：agent 能不能安全登录、保持身份、代表用户行动。
+- Agent Integration：有没有 MCP、webhook、streaming、SDK、function calling、支付协议等操作管道。
+- User Experience：用户能不能通过 agent 完成端到端任务，并在需要确认、付款、选择时获得可信的人类交接体验。
+
+所以它测的不是“网页对人友不友好”，而是“网站对 agent 是否可操作”。传统网页按钮和表单只是最后的 fallback。对 agent 来说，更理想的路径是结构化能力：明确的工具描述、稳定接口、可验证权限、可恢复错误、可流式返回，以及必要时能渲染可信 UI。
+
+## 最关键的判断：能读，不等于能做
+
+报告里最有价值的一句话是：agents can read, they can't act.
+
+这个判断很重要，因为很多团队会误以为“我们的网站能被 ChatGPT 总结出来”就已经足够。实际上，读取只是最低层。Agent 真正有价值的场景不是替用户读一段介绍，而是完成一个动作：
+
+- 在 CRM 里写入一条记录；
+- 在支付系统里创建一笔收款；
+- 在开发者平台里生成 key；
+- 在电商系统里比较、下单、退款；
+- 在 SaaS 后台里查询数据、生成报表、触发流程。
+
+这些任务都绕不过登录、权限、API、错误处理和用户确认。Ora 的数据也显示，静态文件相关的基础项普及度更高，比如 sitemap、robots policy、llms.txt；但一到 OAuth metadata、PKCE、MCP 合规工具描述、streaming transport、agent payment、agent UI，采用率就明显掉下去。
+
+这说明 agent web 的瓶颈不是“让模型知道你”，而是“让模型能安全地替用户做事”。
+
+## 为什么浏览器自动化不是最终答案
+
+今天的 agent 确实可以用 browser use 或 headless scraping 硬点网页。它可以读 DOM、点击按钮、填表、截图、重试。短期看，这让很多网站“勉强可用”。
+
+但 Ora 报告指出，这种方式的成本和脆弱性都很高：token 成本更高，速度更慢，DOM 一改就可能坏。更大的问题是，浏览器 UI 本来是给人设计的，不是给 agent 设计的。人看到一个按钮可以结合上下文判断，agent 需要更明确的语义、权限、错误边界和状态返回。
+
+这和移动互联网早期很像。最早手机也能打开桌面网页，但真正的移动体验不是“把网页缩小”，而是重新设计触摸、权限、定位、通知、支付和应用分发。Agent 时代也一样：让 agent 操作网页只是过渡形态，真正的 agent-ready 产品需要把能力暴露成机器可理解、可调用、可验证的接口。
+
+## 对产品团队的直接含义
+
+如果用户入口从“打开网站”变成“让 agent 替我完成任务”，产品竞争会发生几个变化。
+
+第一，可发现性会从 SEO 扩展成 AEO/GEO。你不仅要被搜索引擎索引，还要被 answer engine 和 agent 候选集理解。页面结构、JSON-LD、sitemap、llms.txt、文档清晰度、价格页、用例页都会影响 agent 对你的判断。
+
+第二，API 不再只是开发者功能，而会变成用户体验的一部分。过去 API 面向集成团队；现在 agent 可能直接代表最终用户调用能力。API 的权限、错误信息、schema、streaming、幂等性和审计日志，都会影响“用户是否能通过 agent 完成任务”。
+
+第三，认证会成为关键产品面。Agent 不能随便拿用户密码，也不能在不清楚权限的情况下代替用户行动。OAuth metadata、PKCE、scoped permission、delegated access 这些过去偏基础设施的东西，会变成 agent 体验的入口门槛。
+
+第四，UI 不是消失，而是变成 handoff。Agent 可以完成大部分流程，但在付款、审批、视觉选择、敏感操作时仍要把控制权交还给人。这个交接体验如果不可信，agent 流程就会在最后一步失败。
+
+## 对网站建设的检查清单
+
+如果把 Ora 的框架压缩成一个实用 checklist，我会这样看：
+
+1. Agent 能找到我吗？
+   sitemap、robots、结构化页面、清晰标题、稳定文档、可被模型正确引用的产品描述。
+
+2. Agent 能理解我吗？
+   明确说明产品对象、核心能力、定价、限制、适用场景、替代方案差异，避免只写营销词。
+
+3. Agent 能代表用户登录吗？
+   OAuth、scoped permission、PKCE、token lifecycle、审计日志、撤销授权、错误恢复。
+
+4. Agent 能调用我的能力吗？
+   MCP、OpenAPI、function calling schema、SDK、webhook、streaming、稳定错误格式、幂等接口。
+
+5. Agent 能完成真实任务吗？
+   多轮任务、状态查询、失败重试、确认页、支付或审批 handoff、最终结果可验证。
+
+这套 checklist 的重点不是“赶紧加一个 llms.txt 就完事”。llms.txt 和 sitemap 是入口，但真正拉开差距的是认证、集成和端到端任务完成。
+
+## 我认为最值得警惕的误读
+
+第一个误读是把 agent readiness 当成新的 SEO。SEO 主要服务发现和排序；agent readiness 服务的是执行。发现只是第一步，后面还有身份、权限、调用、错误恢复、用户确认。
+
+第二个误读是把 MCP 当成银弹。报告里一个很有意思的数据是：声称有 MCP endpoint 和真正有高质量 MCP 能力之间有明显差距。只有 endpoint 不够，工具描述、命名一致性、streamable transport、OAuth metadata、PKCE、错误语义都要能工作。
+
+第三个误读是以为 consumer 网站可以暂时不管。短期看，B2B、CRM、开发者工具、基础设施会更快被 agent pressure 推动，因为买方已经开始把任务交给 agent。但 consumer 最后也会被重写，只是节奏慢一点。机票、保险、电商、医疗预约、金融服务这些流程，本质上都适合 agent 代办。
+
+第四个误读是以为 agent 会忠诚地访问品牌官网。更可能的情况是：agent 会比较多个候选服务，选择更容易完成任务、权限更清楚、接口更稳定、结果更可验证的那个。网站如果不可操作，就会从用户旅程里消失。
+
+## 和我们之前讨论的 agentic engineering 的关系
+
+这份报告可以和 Karpathy 讲的 agentic engineering 连在一起看。
+
+Agentic engineering 关注的是工程师如何使用 agent 构建软件：写 spec、组织上下文、跑测试、验证输出、控制质量。Ora 这份报告关注的是另一侧：软件本身如何被 agent 使用。
+
+两边合在一起，会形成一个闭环：
+
+- 开发侧：人类工程师编排 agent 来构建系统。
+- 使用侧：用户 agent 编排网站、API 和服务来完成任务。
+
+这意味着未来的软件不仅要“由 agent 辅助开发”，还要“为 agent 可操作而设计”。如果一个产品内部已经使用 agentic engineering，但对外仍然只暴露给人点击的网页，它只完成了一半 AI-native 转型。
+
+## metaswarm 说明了开发侧正在发生什么
+
+如果说 Ora 报告是在看“网站能不能被用户 agent 操作”，那 metaswarm 这类项目看的就是另一面：“软件能不能被一组开发 agent 稳定地生产出来”。
+
+metaswarm 的定位不是单个 coding agent，而是一套多 agent 开发编排框架。它把软件开发流程拆成研究、计划、设计评审、任务分解、实现、验证、对抗式 review、PR shepherd、知识沉淀等阶段，再由不同 agent persona 负责不同环节。它支持 Claude Code、Gemini CLI 和 Codex CLI，也强调 TDD、覆盖率门禁、跨模型 review、Playwright 视觉检查、BEADS 任务跟踪和 git-native 知识库。
+
+这个例子值得放在 Ora 报告旁边看，因为两者其实在回答同一个问题：当 agent 从“聊天窗口里的回答者”变成“流程中的操作者”，系统边界应该怎么设计？
+
+在开发侧，metaswarm 的答案是把软件工程拆成可审计的阶段、角色、门禁和知识循环。它不假设一个 agent 从头到尾自觉做好所有事，而是用流程约束它：谁写、谁审、什么算完成、失败后怎么升级、经验如何进入下一轮。
+
+在产品侧，Ora 的答案是把网站能力拆成可发现、可认证、可调用、可验证的接口。它也不假设 agent 能靠浏览器自动化永远猜对，而是要求产品暴露更稳定的机器入口：OAuth metadata、PKCE、MCP、OpenAPI、streaming、错误语义、human handoff。
+
+所以 metaswarm 和 Ora 报告的共同点不是“多 agent 很酷”，而是一个更朴素的工程判断：agent 要真正进入生产流程，不能只靠模型能力堆叠，必须有协议、权限、状态、评审、测试和恢复机制。
+
+这也解释了为什么 agentic engineering 和 agent-ready web 会同时出现。前者是在重构软件的生产方式，后者是在重构软件的使用方式。一个产品如果只做前者，就只是让内部开发更快；如果只做后者，就只是让外部 agent 更容易调用。真正的 AI-native 产品，最后会同时具备这两种能力：内部能被 agent 可靠构建，外部能被 agent 可靠操作。
+
+## 最后判断
+
+Ora 这份报告真正重要的地方，不是“只有 1% 的网站准备好了”这个传播点，而是它把网站的新评价对象说清楚了：未来访问你网站的不一定是人，也不一定只是搜索爬虫，而是带着用户任务和权限边界的 agent。
+
+网站从展示面变成操作面以后，产品团队要重新定义“可用”：
+
+- 对人可读，不等于对 agent 可理解；
+- 对浏览器可点，不等于对 agent 可调用；
+- 有 API，不等于有 agent-ready integration；
+- 能完成 demo，不等于能安全代表用户执行任务。
+
+所以这是“agent 操作网站”的报告，但更准确地说，它是 agentic web 的基础设施体检。它提醒我们：下一代网站竞争不只是页面设计和内容分发，而是能不能成为 agent 可以信任、调用、完成任务的节点。

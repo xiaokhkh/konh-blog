@@ -1,0 +1,146 @@
+---
+title: "Useful Memories Become Faulty When Continuously Updated by LLMs 精读"
+description: "精读一篇关于 agent memory 退化的论文：持续 LLM consolidation 会让有用经验变成错误抽象，raw episode 必须是一等事实源。"
+pubDate: 2026-05-19
+tags: ["ai", "agents", "memory", "research"]
+---
+
+## 整理说明
+
+整理方式：基于《Useful Memories Become Faulty When Continuously Updated by LLMs》论文 PDF 精读整理。本文重点关注论文对长期记忆架构、持续总结和 raw episode 保留的工程含义。
+
+## 一句话结论
+
+这篇论文的结论非常硬：LLM agent 把历史轨迹持续总结成文本 memory bank，并不断重写更新，短期可能提升，长期会退化；严重时甚至低于无记忆 baseline。问题不在“经验没用”，而在 LLM 的 consolidation 过程会丢失细节、引入伪规则、抹掉适用边界。
+
+工程含义是：raw episode 必须是一等公民，summary 只能是派生层；consolidation 必须有 gate，不能每次交互后自动触发。
+
+## 论文的核心区分：episodic vs consolidated
+
+论文先区分两类记忆：
+
+- episodic traces：原始轨迹，记录发生过什么，包括观察、行动、失败、反馈、环境状态；
+- consolidated abstractions：从多个 episode 中抽象出的规则、经验、schema。
+
+很多 agent memory 系统追求第二种：把过去任务总结成“lesson”“workflow”“cheatsheet”，后续再检索这些抽象经验。这个想法很诱人，因为它看起来能让 agent 不改模型参数也持续进化。
+
+论文要证明的是：当前 LLM 不是可靠的 memory consolidator。它能从单个经验受益，但不稳定地把多个经验压成长期可靠的抽象。
+
+## 最关键的实验发现
+
+### 1. memory utility 非单调：先升后降
+
+在 ScienceWorld 上，用 CLIN 类方法做连续 memory update，效用先上升，在大约 20 step 附近达到峰值，然后随着更新继续下降，到 100 step 时明显退化，有时低于 no-memory baseline。
+
+在 WebShop 上，AWM 也出现类似现象：8 examples 时成功率约 0.64，128 examples 时降到约 0.20，而 no-memory 也是约 0.20。也就是说，更多经验被持续压缩后，没有变成更强 memory，反而把收益磨掉了。
+
+### 2. 最干净的证据：ARC-AGI 上从 100% 掉到约 54%
+
+论文最有杀伤力的实验是 ARC-AGI Stream。GPT-5.4 在一组 19 个问题上无记忆能 100% 解出。然后研究者用这些题的 ground-truth solution 进行 stream consolidation，也就是输入经验是正确的、有用的。
+
+结果：连续 consolidation 后，模型在同一批原本能解的问题上降到约 54%。这排除了两个借口：
+
+- 不是因为原始经验质量差；
+- 不是因为任务本来不会做。
+
+退化来自 memory consolidation 本身。
+
+### 3. 同一批轨迹，不同更新方式，结果不同
+
+论文比较了 Static-All、Static-Group、Stream 等更新方式。结论是：同样的 trajectory pool，如果一次性整体 consolidation，比流式一批批重写更稳定；如果按任务 family 分组 consolidation，比混合异质任务更稳定。
+
+这说明 memory 不是内容固定后自然得到一个正确压缩结果。更新顺序、分组方式、batch 组成都会改变最终记忆。早期错误抽象会变成后续更新的上下文，导致错误复利。
+
+### 4. raw trajectory baseline 很强
+
+论文在 WebShop、ALFWorld、AppWorld 上测试 episodic-only memory，也就是不做跨轨迹抽象，只把原始 rollout 放进上下文作为示例。这个 baseline 经常能打平或超过 lesson-style consolidator。
+
+这点非常重要：如果一个 memory 方法不能稳定打过它压缩前的 raw trajectory retrieval，那抽象层就是负资产。
+
+### 5. 给 agent 自主选择时，它倾向保留 raw episode
+
+论文设计了 ARC-AGI Stream 环境，让 agent 每步可以做三种 memory 操作：
+
+- Retain：保留原始 episode；
+- Delete：删除 entry；
+- Consolidate：把 episode 压成 abstract store。
+
+对比强制每轮 consolidation 的 Force 模式，Auto 模式表现更好。更关键的是，Auto 会很快填满 episodic buffer，同时保持 abstract store 稀疏。也就是说，模型自己在这个架构里选择了 episodic-first。
+
+甚至只允许 episodic management、不允许 abstraction 的模式，也能匹配或超过 full Auto。这说明在当前模型能力下，很多收益来自保留证据，而不是来自抽象总结。
+
+## 三个失败机制
+
+### 1. Misgrouping：先分错组，再抽象
+
+正确 consolidation 的前提是知道哪些经验属于同一类。如果把不同 task family 的经验混在一起，LLM 会把不兼容的做法压成一个规则。
+
+论文发现，模型有能力逐步识别不同问题类型，但这个过程需要时间。强制每轮马上 consolidation，会在分组还没稳定时就写入抽象规则，导致错误固化。
+
+### 2. Interference：抽象丢掉适用条件
+
+LLM 总结时会把原本带上下文的经验写成看似通用的规则。问题是适用条件被抹掉后，规则会在相邻但不同的任务里误导 agent。
+
+例如某条经验本来只适用于 A 类任务，但被写成通用 workflow 后，在 B 类任务里会造成错误操作。ScienceWorld 的累计 consolidation 也显示，随着任务切换，过度泛化和垃圾 memory 会持续积累。
+
+### 3. Overfit：窄输入流导致表面规律过拟合
+
+当输入流太窄时，memory 会过拟合到见过样例的表面模式。它在重复题上看起来稳定，但在同类轻微变化上性能崩掉。
+
+这说明 LLM 的抽象不一定抽到了 underlying strategy，可能只是把训练样例的表面特征写成了规则。
+
+## 论文对 memory 架构的直接要求
+
+这篇论文不是说 abstraction 永远没用，而是说当前常见的“每次交互后自动总结并重写 memory bank”是危险默认。
+
+更稳的架构应该是：
+
+1. fast episodic store：快速保留原始 episode，事实源不可被 summary 替代；
+2. slow schema store：慢速形成抽象规则，只在证据足够、分组稳定、适用边界清楚时更新；
+3. gated consolidation：抽象是 opt-in，不是每次自动发生；
+4. provenance：每条 memory 都要能回到原始 episode；
+5. version / diff / rollback：memory update 要可审计、可回滚；
+6. episodic-only baseline：任何新 memory 方法都要先证明比 raw retrieval 更好。
+
+## 对 Anthropic memory / dreaming 视频的反向审查
+
+这篇论文让我们看 Anthropic 的 memory / dreaming 视频时，不能只看产品能力，而要追问实现边界。
+
+Dreaming 作为后台异步整理是正确方向，因为它把 memory 质量目标从任务热路径里分离出来。但它是否可靠，取决于：
+
+- dream job 是否保留并引用原始 session；
+- 是否能识别不同任务 family，而不是混合总结；
+- 是否有人工或自动 gate；
+- 是否记录 memory diff 和来源；
+- 是否允许抽象 memory 稀疏更新；
+- 是否能删除过时或错误 memory；
+- 是否用 raw episode retrieval 做 baseline。
+
+如果 dreaming 只是更大规模、更勤快地做 LLM rewrite，那它也会遇到论文里的 memory erosion。正确用法应该是：dreaming 负责发现候选模式和组织结构，事实仍然落在 raw logs / sessions / PR / traces 上。
+
+## 对我们本地 Codex memory 的直接建议
+
+我们现在的 memory summary 不能被当成唯一事实源。正确结构应该是：
+
+- rollout summary 是入口，不是事实本身；
+- 原始 jsonl / tool output / commit diff / local artifacts 必须可查；
+- 每条长期规则都要带来源；
+- memory 更新要少而准，不要每轮泛化；
+- 对“经验总结”保持怀疑，优先找原始证据。
+
+尤其在 repo/debug 工作里，summary 很容易把“曾经出现过的症状”写成“通用根因”。这正是 interference：适用条件丢了，后续 agent 会被误导。
+
+## 最有用的工程检查表
+
+如果要设计或评估一个 agent memory 系统，先问：
+
+1. 这个系统保存 raw episode 吗？
+2. summary 是否能逐条追溯来源？
+3. consolidation 是否可延迟、可拒绝、可回滚？
+4. memory entry 是否写明适用条件和反例？
+5. 是否区分 task-local、project-level、org-level memory？
+6. 是否有 no-memory 和 episodic-only baseline？
+7. 是否衡量 memory 随时间的退化，而不是只看短期提升？
+8. 是否检测 overgeneralization、garbage memory、duplicate 和 stale entry？
+
+这篇论文的核心价值是把“长期记忆”从一个产品卖点拉回工程事实：更多经验不会自动变成更好知识。没有证据保留和抽象门控，memory 会从资产变成污染源。

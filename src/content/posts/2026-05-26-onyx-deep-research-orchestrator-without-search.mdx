@@ -1,0 +1,129 @@
+---
+title: "Onyx Deep Research 精读：为什么 orchestrator 不该自己搜索"
+description: "基于 Avi Chawla 对 Onyx deep research 架构的拆解，梳理一个反直觉设计：负责研究策略的 orchestrator 没有搜索权限，反而能让多 agent 研究更稳。"
+pubDate: 2026-05-26
+tags:
+  - ai
+  - agents
+  - research
+  - rag
+cover: /images/uploads/2026-05-26-onyx-deep-research-cover.jpg
+coverAlt: Onyx deep research architecture diagram from Daily Dose of Data Science
+---
+
+## 整理说明
+
+整理方式：基于 Avi Chawla 在 X 上发布的 [Onyx Deep Research 架构拆解](https://x.com/_avichawla/status/2058837753954238510)，以及对应的 Daily Dose of Data Science 文章 [The No. 1 Deep Researcher Beats Claude and ChatGPT Using a Counterintuitive Trick](https://blog.dailydoseofds.com/p/the-no-1-deep-researcher-beats-claude)、[Onyx GitHub 仓库](https://github.com/onyx-dot-app/onyx) 公开说明整理。
+
+这篇不把“榜单第一”当作永久结论。Deep research 排名会变，真正值得记下的是架构判断：让负责策略的 agent 少拿工具，可能比让它什么都能做更可靠。
+
+## 一句话结论
+
+Onyx 这套 deep research 架构最反直觉的地方是：orchestrator 不搜索。
+
+它负责拆问题、维护研究策略、分派任务、读中间报告、决定下一轮方向，但不能直接查网页，也不能自己打开 URL。真正的搜索、阅读和证据收集由隔离的 research agents 完成。
+
+这不是削弱 agent，而是在给 agent 划职责边界。因为一旦 orchestrator 也有搜索能力，它很容易从“研究经理”退化成“第一个动手搜资料的人”：抓到几条结果，过早形成答案，减少任务拆解，最后产出一份看起来完整但证据覆盖很薄的报告。
+
+## 为什么不给 orchestrator 搜索权限
+
+很多 deep research 产品会默认给中心 agent 很多工具：search、open URL、read docs、summarize、write report。直觉上，这样最强，因为中心 agent 可以看到全局，也可以直接行动。
+
+但这个设计有一个工程问题：工具会改变角色。
+
+如果 orchestrator 既能规划又能搜索，它会倾向于直接回答。模型在拿到搜索结果后，容易被前几条材料锚定，开始局部综合，而不是继续做高质量任务分解。这样一来，所谓多 agent 研究只是形式上并行，实际还是一个中心 agent 的浅层搜索链。
+
+Onyx 的取舍是把 orchestrator 的手绑住：它只能写清楚研究方向和任务 brief，不能自己拿结果。这迫使它把问题拆成更自洽的子任务，让 research agent 带着明确目标去查证。
+
+这个设计和真实组织里的分工很像。一个研究负责人如果一边管策略、一边自己冲进搜索引擎，很容易被局部材料牵着走。更稳的方式是先定义问题空间，再让不同研究员并行查证，最后回到统一框架里综合。
+
+## 三阶段流水线
+
+从 Avi 配图和文字看，Onyx deep research 可以压缩成三阶段。
+
+第一阶段是 query planning。用户提出问题后，系统可以先问澄清问题；如果问题已经足够清楚，就由 plan generator 生成最多 6 个研究方向。这个 planning 阶段没有工具访问，所以输出只能是研究计划，而不是早熟答案。
+
+第二阶段是 parallel research。orchestrator 基于计划调度多个隔离的 research agents。每个 research agent 有自己的上下文，可以做搜索、打开 URL、读取内部资料，并经过多轮 search-read-think 循环产出带引用的中间报告。Avi 的拆解里提到每个 agent 最多跑 8 个子循环，配图里是 3 个 agent 并行。
+
+第三阶段是 synthesis and citations。系统不是让一个新的 agent 随意重写引用，而是用确定性步骤做 citation collapse、renumbering 和 deduplication，生成统一 citation map，再输出最终报告。
+
+这三阶段的关键不是“多 agent 数量多”，而是每层产物很清楚：计划、研究报告、统一引用表、最终报告。
+
+## 两层深度的意义
+
+帖文里还有一个容易被忽略的细节：Onyx 没有把 agent 层级做得很深。
+
+多 agent 系统很容易被设计成 planner 下面有 manager，manager 下面有 worker，worker 下面还有 sub-worker。看起来更像组织结构，但信息每过一层都会被重新解释、压缩和总结。长链路会带来两个问题：
+
+- 事实被逐层摘要后变形；
+- 引用和判断依据越来越难追溯。
+
+Onyx 保持两层：orchestrator 和 research agent。orchestrator 管研究策略，research agent 做证据收集。这个深度足够支持并行，又没有把信息传递链拉得太长。
+
+这对 agent 系统设计很重要。复杂度不应该靠层级堆出来，而应该靠清晰的接口和可验证的中间产物来承载。
+
+## Internal search 是 Onyx 的真实优势
+
+如果只看公开网页搜索，Onyx 的架构可以理解成 deep research agent。但它更重要的场景其实是企业内部研究。
+
+Onyx 本身定位是 open-source AI platform，支持 RAG、web search、code execution、deep research、自定义 agents，以及 Slack、Confluence、Google Drive、GitHub、SharePoint 等连接器。它的研究 agent 不只查 web，也可以查内部知识库，并且按文档权限执行检索。
+
+这点和普通 deep research 产品有本质区别。很多团队真正需要研究的不是“网上有没有答案”，而是：
+
+- 公司内部过去有没有做过类似项目；
+- 相关决策散落在哪些 Slack thread、Confluence 页面和 issue 里；
+- 哪些文档我有权限看，哪些不能被 agent 泄露；
+- 外部市场资料和内部事实是否冲突；
+- 最后报告能不能给出可追溯引用。
+
+所以 Onyx 的价值不只是“开源版 Deep Research”，而是把 deep research 放进企业知识权限系统里。
+
+## 和 OpenAI / Anthropic / Google 路线的差别
+
+Avi 的帖子里把 Onyx 和几类主流路线做了对比。
+
+一种路线是长链工具调用：同一个模型连续搜索、阅读、推理、写报告。好处是简单，坏处是模型会把大量 token 和注意力花在低价值搜索上，而且策略层容易被局部材料污染。
+
+另一种路线是 orchestrator-researcher pattern。Anthropic、Google 这类系统也会把规划和研究拆开。Onyx 的差异在于更强地限制 orchestrator：它不能搜索，只能规划、派发和分析中间报告。
+
+这背后的产品判断是：研究质量不只来自更强模型，也来自正确的角色约束。一个强模型如果职责混乱，仍然会做出浅层研究；一个受约束的模型如果被放在正确位置，反而更容易维持全局策略。
+
+## 这给 agent 产品的启发
+
+我觉得这条帖子最值得带走的不是 Onyx 本身，而是一个 agentic engineering 原则：工具权限也是 prompt。
+
+我们经常把 agent 设计理解成“给它更多上下文、更多工具、更强模型”。但 Onyx 的例子说明，减少工具同样是设计。不给 orchestrator 搜索权限，本质上是在告诉它：你的工作不是找答案，而是让别人高质量地找答案。
+
+这对很多 agent 产品都有参考价值：
+
+- coding agent 的 planner 不一定要直接改文件；
+- data agent 的 coordinator 不一定要直接跑 SQL；
+- customer support agent 的 router 不一定要直接回复用户；
+- operations agent 的 incident commander 不一定要直接执行修复命令。
+
+当一个 agent 同时拥有规划权、执行权和最终解释权时，它会很容易走捷径。把权限拆开，反而能让系统更稳定。
+
+## 可能的风险
+
+这套架构也不是无成本的。
+
+第一，规划质量变得更重要。如果 orchestrator 不能搜索，它必须从用户问题和历史中写出足够清晰的 research brief。问题太模糊时，clarification step 就不能省。
+
+第二，并行 research agents 会增加成本。多个 agent 各自搜索、阅读、思考，token 和外部搜索调用都会增长。它适合高价值研究任务，不一定适合每个普通问答。
+
+第三，最终综合仍然需要强约束。即使 citation collapse 是确定性步骤，最终报告的叙事组织仍可能遗漏少数派证据或弱化不确定性。系统应该保留中间报告和 citation map，让用户能追溯判断。
+
+第四，“榜单第一”不该被当成产品真理。DeepResearch Bench 这样的榜单有价值，但真实部署还要看数据权限、延迟、成本、可观测性、失败恢复和审计。
+
+## 最后判断
+
+Onyx 这个案例说明，deep research 的核心不是“让一个 agent 更努力地搜”，而是把研究拆成可治理的流程：
+
+- planning 阶段不许早熟回答；
+- research 阶段让隔离 agent 带着明确 brief 查证；
+- synthesis 阶段统一引用和去重；
+- enterprise 场景下把内部权限、连接器和可追溯性纳入系统边界。
+
+这和最近很多 agent 产品的方向是一致的：从单个万能聊天窗口，走向有角色、有权限、有中间产物、有验证边界的工作系统。
+
+真正的重点不是 orchestrator 有多聪明，而是它能不能克制自己不去做 research agent 该做的事。

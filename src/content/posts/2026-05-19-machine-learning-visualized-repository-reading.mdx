@@ -1,0 +1,131 @@
+---
+title: "machine-learning-visualized 仓库精读"
+description: "精读 gavinkhung/machine-learning-visualized：它不是生产 ML 框架，而是一套从第一性原理、NumPy 实现和可视化建立算法直觉的 Jupyter Book。"
+pubDate: 2026-05-19
+tags: ["machine-learning", "learning", "ai", "engineering"]
+---
+
+## 整理说明
+
+整理方式：基于 `gavinkhung/machine-learning-visualized` 仓库目录和 notebook 下载脚本的抓取证据整理。本文重点判断它作为学习材料、Jupyter Book 发布工程和 AI-native 工作流校准工具的价值。
+
+## 一句话结论
+
+这个仓库的价值不是“提供一个生产 ML 框架”，而是用 Jupyter Book 把一组机器学习算法从第一性原理推导、NumPy 实现、训练过程可视化组织起来。它适合用来建立算法心智模型，不适合当作工程生产库。
+
+更准确地说，`machine-learning-visualized` 是一个课程/书籍壳：它组织目录、下载 notebook、构建 Jupyter Book。具体算法 notebook 分布在多个独立仓库里。
+
+## 仓库定位
+
+README 描述是：ML algorithms implemented and derived from first principles in Jupyter Notebooks and NumPy。
+
+它强调三件事：
+
+- derived from first principles：不是直接调 scikit-learn，而是从数学和算法假设推导；
+- implemented in NumPy / notebooks：用基础数组运算实现，降低黑盒程度；
+- visualized：用图像、交互 notebook、训练曲线展示权重、loss、收敛等过程。
+
+这类材料的最佳用途是学习和校准直觉：你可以看到损失函数为什么长这样、梯度下降如何移动、权重变化如何影响分类边界、神经网络如何逐步拟合。
+
+## 实际目录结构
+
+从 `_toc.yml` 看，这本 Jupyter Book 分为四章。
+
+### Chapter 1. Optimization
+
+- `chapter1/linear_regression`
+- `chapter1/interactive_linear_regression`
+
+重点是线性回归和梯度下降。它适合理解 ML 的基础循环：定义模型、定义 loss、计算梯度、更新参数、观察误差下降。
+
+### Chapter 2. Clustering and Reduction
+
+- `chapter2/pca`
+- `chapter2/k_means`
+
+这一章覆盖无监督学习里的两个基础概念：PCA 和 K-means。PCA 关注如何用低维方向保留主要方差；K-means 关注如何通过迭代分配和更新中心形成聚类。
+
+### Chapter 3. Linear Models
+
+- `chapter3/perceptron`
+- `chapter3/logistic_regression`
+- `chapter3/interactive_perceptron`
+- `chapter3/interactive_logistic_regression`
+
+这一章从感知机到逻辑回归，适合理解线性分类器的边界、误差驱动更新、概率输出和交叉熵一类目标函数。
+
+### Chapter 4. Neural Networks
+
+- `chapter4/neural_network`
+- `chapter4/neural_network_weights`
+
+这一章展示基础神经网络结构和权重影响。配套脚本还下载网络结构图 `nn.svg` 和架构图 `nn-1.png`，说明它不是只给代码，也重视可视化解释。
+
+## 重要细节：notebook 来自多个子仓库
+
+`download_notebooks.sh` 显示这个仓库会从多个 GitHub repo 拉取实际 notebook：
+
+- `gradient-descent`：线性回归和数据文件；
+- `pca`：PCA notebook；
+- `k-means-clustering`：K-means notebook；
+- `logistic-regression`：逻辑回归 notebook；
+- `perceptron`：感知机 notebook；
+- `neural-network`：神经网络 notebook 和图像资产。
+
+所以不要误判它是所有内容都在一个 repo 里的 monorepo。它更像 Jupyter Book 的发布工程：把分散 notebook 汇总成一本可阅读、可构建、可导出的交互式教材。
+
+## 它和常规 ML 教程的区别
+
+常规教程经常从 API 开始：导入库、加载数据、fit、predict、看准确率。这种路径快，但容易让人只记住工具调用，不理解模型行为。
+
+这个项目从第一性原理出发，重点是让你看到算法内部发生什么：
+
+- 线性回归不是 `LinearRegression().fit()`，而是参数如何让误差最小；
+- 梯度下降不是一句 optimizer，而是 loss surface 上的移动过程；
+- 逻辑回归不是分类 API，而是 sigmoid、log loss、决策边界；
+- PCA 不是降维按钮，而是方差方向和投影；
+- K-means 不是聚类函数，而是中心点迭代；
+- 神经网络不是黑盒，而是层、权重、激活、误差传播的组合。
+
+对学习者而言，这种方式慢一点，但能建立可迁移理解。
+
+## 对当前 AI / agent 语境的意义
+
+把它和另外三份材料放在一起看，它承担的是“底层理解训练”的角色。
+
+Founder playbook 说 AI 把执行压缩了；Anthropic 视频说 agent memory 和 dreaming 能把经验跨 session 复用；arXiv 论文说 memory 抽象会失真。那这个 repo 提醒的是：如果你没有基础模型和算法的第一性原理理解，AI 生成的解释、代码和 memory summary 都很容易显得合理但实际错误。
+
+在 AI-native 工作流里，工具速度越快，理解底座越重要。因为错误不再慢慢出现，而是被 agent 规模化复制。
+
+## 适合怎么用
+
+最合理的用法不是从头到尾泛读，而是按问题学习：
+
+1. 想理解“模型怎么学习”：先看 linear regression + gradient descent。
+2. 想理解“分类边界怎么形成”：看 perceptron 和 logistic regression。
+3. 想理解“无监督结构怎么被发现”：看 PCA 和 K-means。
+4. 想理解“神经网络权重为什么影响输出”：看 neural_network_weights。
+
+如果目标是补 ML 基础，建议每个 notebook 不只运行，还要改参数：学习率、初始化权重、数据分布、类别间距、聚类数量。可视化的价值在于看到行为变化，而不是看完静态图。
+
+## 局限
+
+这个项目不解决生产问题：
+
+- 没有完整工程训练 pipeline；
+- 不关注大规模数据、分布式训练、模型部署；
+- 不替代 PyTorch / JAX / scikit-learn；
+- 不提供现代 deep learning 全栈；
+- notebook 内容分散在多个 repo，复现依赖网络和构建环境。
+
+所以它的评估标准不是“能不能直接用于生产”，而是“能不能让你理解算法为何这样工作”。
+
+## 对我们的直接建议
+
+这个 repo 可以作为第一性原理学习材料，尤其适合做两类用途：
+
+第一，给 agent 生成的 ML/数据分析代码做 sanity check。比如 agent 写了梯度下降或 logistic regression，你可以用这些 notebook 的基本推导去检查 loss、更新方向、边界条件。
+
+第二，做内部学习路径。每次只选一个算法，要求输出三件东西：数学假设、NumPy 实现、可视化解释。不要把目标设成“学完 ML”，而是把每个算法学到能解释行为变化。
+
+一句话：这个仓库不是工具箱，是校准理解的显微镜。它的价值在于让你少被黑盒 API 和 agent 生成内容带偏。

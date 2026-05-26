@@ -1,0 +1,228 @@
+---
+title: "Claude Code Routines 和飞书多会话管理"
+description: "从 Boris Cherny 的 Claude Code routines 演示出发，复盘我之前做飞书多会话管理时真正想要的能力：把聊天窗口升级成 agent operations console。"
+pubDate: 2026-05-26
+tags:
+  - ai
+  - agents
+  - claude-code
+  - feishu
+cover: /images/uploads/2026-05-26-claude-code-routines-feishu-cover.jpg
+coverAlt: Boris Cherny demonstrating multiple Claude Code sessions in the Claude desktop app
+---
+
+## 整理说明
+
+整理方式：基于 [X 视频](https://x.com/i/status/2058552429386641687) 的内嵌字幕、画面关键帧和推文文字。视频约 6 分 32 秒，主讲人是 Boris Cherny，演示主题是 Claude Code 的并行 session、routines 和 CI Autofix。
+
+![Claude Code routines key frames](/images/uploads/2026-05-26-claude-code-routines-feishu-frames.jpg)
+
+## 一句话结论
+
+这条视频真正讲的不是“Claude Code 又会写更多代码了”，而是 AI 编程工具的默认形态正在从单个聊天窗口变成多会话、异步、可验证、可接管的工作系统。
+
+这也是我之前做飞书多会话管理时一直想实现的方向：飞书不是再套一层聊天 UI，而是成为 agent operations console。人在飞书里发起任务、观察状态、插话接管、看验收结果；agent 在后台并行工作、创建 PR、跑验证、处理 CI、等待人工确认。
+
+## 视频里发生了什么
+
+Boris 先设定了一个虚构场景：我们是 Acme Pay 的工程师，要给商户后台增加退款功能。
+
+Claude Code 的演示不是停在“生成退款按钮代码”。它会围绕一个真实工程任务展开：
+
+- 防止重复退款；
+- 处理 Acme 服务区域内的多币种问题；
+- 给合规团队增加审计日志；
+- 给实现打分，并验证自己的工作；
+- 打开商户后台，在浏览器里触发退款；
+- 发现没有成功 toast 这样的 UI 边界问题；
+- 定位 optimistic update 里的 race condition；
+- 修复后再继续推进到 PR。
+
+这段演示的重点是：agent 的任务边界不再是“写一段代码”，而是“把一个需求推进到接近可合并状态”。代码只是过程产物之一，真正的交付物是带验证证据的工作结果。
+
+接着 Boris 把视角拉远：刚才的退款任务不是一个孤立会话，而是许多 Claude Code session 里的一个。在 Claude desktop app 里，可以看到哪些 session 正在运行，哪些需要人的输入，哪些已经创建 PR，哪些 PR 已经合并或关闭。
+
+这里出现了视频的核心判断：未来很多代码会以 async 的方式写出来。你发起任务，去做别的事，回来时看到一个已经跑过验证、打开 PR、处理过 CI 的结果。
+
+## Routines：高阶 prompt
+
+视频里最重要的产品概念是 routines。
+
+Boris 说，他现在很多代码不是自己一条条 prompt 出来的，而是创建 routine，让 routine 去 prompt Claude Code。他给工程师的类比是：routine 像 higher-order function，也就是高阶函数。普通 prompt 是一次函数调用，routine 是可以持续触发、管理和分派工作的高阶 prompt。
+
+这个类比很准确。因为 routine 的价值不是把一句 prompt 保存成模板，而是把触发条件、执行环境、验收标准和后续动作一起封装起来。
+
+比如视频里的例子：
+
+- 队友半夜提了一个 GitHub issue；
+- 监听 repo 的 routine 自动捡起这个 issue；
+- routine 异步启动 Claude Code session；
+- session 完成实现、验证、提交 PR；
+- 早上醒来时，工程师看到的是一个可以 review 或 merge 的 PR。
+
+routine 可以按计划运行，可以由 webhook 触发，也可以由任意 API 调用触发；可以在本机跑，也可以在远程云计算上跑。
+
+这说明 Anthropic 不是只想让 Claude Code 成为一个更聪明的 coding assistant，而是想让它成为一个可调度的工程执行单元。
+
+## CI Autofix：把 PR 看护到终点
+
+后半段演示的是 CI Autofix。
+
+它监听前一个 session 打开的 PR，职责不是再写一个功能，而是把这个 PR 看护到可以进入生产前的状态：
+
+- 自动处理 code review 评论；
+- 自动处理 security review 评论；
+- 自动修 CI；
+- 遇到 merge conflict 时自动 rebase；
+- CI flaky 时判断原因并重试；
+- 在需要人工确认时把状态交还给人。
+
+演示里 CI 因网络 timeout 失败，routine 醒来后判断这是已知 infra issue，重试后 CI 变绿。Boris 还补了一句：在 Claude Code 自己的代码库里，他们不只是 retry，而是每次修 root cause。
+
+这段很关键。很多人理解 AI coding 还停在“写代码速度变快”。但工程组织真正耗时的地方，往往在写完之后：验证、review、CI、冲突、回归、合并、上线风险。CI Autofix 指向的是这条长尾。
+
+## 为什么单会话不够了
+
+单会话 agent 的问题不是能力弱，而是工作形态太窄。
+
+一个聊天窗口天然假设：
+
+- 人一直在线；
+- 人负责拆任务；
+- 人负责发下一条 prompt；
+- 人负责切换上下文；
+- 人负责观察失败；
+- 人负责决定是否继续。
+
+这在 demo 和个人探索里能跑，但一旦任务进入真实工程流，单会话就会暴露三个限制。
+
+第一，任务不是线性的。一个需求可能同时需要实现、测试、文档、迁移、review、CI 修复、安全检查。把这些都塞进一个会话，会让上下文越来越重，也让人难以判断哪个子任务卡住了。
+
+第二，反馈不是即时的。CI、review、issue、告警、用户反馈都可能在几分钟、几小时甚至第二天才出现。单会话要求人守在旁边，而 routine 可以在事件发生时醒来。
+
+第三，状态需要被治理。多个 agent 如果各自工作，却没有状态面板、来源日志、验收证据和权限边界，最后会变成一堆看似聪明但不可审计的聊天记录。
+
+所以“单智能体工作流过时”更准确地说，是“手动驱动一个 agent 完成一个任务”的模式不够用了。agent 仍然重要，但它需要被放进一个多会话、事件驱动、可验证的系统里。
+
+## 我之前做飞书多会话管理时想要的东西
+
+这也是我之前做飞书多会话管理时的直觉：飞书不应该只是把多个 AI 对话窗口收纳起来，而应该成为一个 agent operations console。
+
+飞书天然有几个优势：
+
+- 群聊和线程适合承载任务上下文；
+- 用户身份和组织关系天然存在；
+- 消息、审批、提醒、文档、表格都在同一个工作环境里；
+- 人可以随时插话、确认、升级、转交；
+- 任务状态可以用卡片、机器人消息、线程和文档沉淀下来。
+
+如果只把它做成“多开几个聊天 session”，价值会被低估。真正的产品形态应该是：每个 session 都是一个可调度、可观察、可接管的工作单元。
+
+人在飞书里看到的不是“AI 正在回复中”，而是：
+
+- 这个任务由什么触发；
+- 当前跑到哪一步；
+- 哪些子 session 正在并行；
+- 哪个 session 需要输入；
+- 产物在哪里；
+- 验证跑了哪些；
+- 失败原因是什么；
+- 是否可以合并、发布或关闭。
+
+这和 Boris 演示的 Claude desktop app 多 session 视图是同一个方向。差别在于，飞书更适合做组织级入口，而 Claude desktop app 更像个人工程师的本地控制台。
+
+## 可以抽象成四层架构
+
+把 Claude Code routines 和飞书多会话管理放在一起看，可以抽象成四层。
+
+第一层是 session layer。每个 agent session 要有任务目标、上下文、状态、日志、工具调用、产物和验收结果。它不能只是聊天 transcript，因为 transcript 很难被调度和治理。
+
+第二层是 trigger layer。任务可以来自飞书消息、GitHub issue、CI 失败、Sentry 告警、定时任务、webhook、人工按钮或 API 调用。routine 的本质就是把触发条件和执行策略绑定起来。
+
+第三层是 coordination layer。一个 coordinator 可以拆任务、启动多个 session、分配角色、合并结果、处理冲突。比如一个需求可以同时开实现 session、测试 session、review session 和文档 session。
+
+第四层是 verification layer。没有验证，多会话只会放大不确定性。测试、lint、类型检查、浏览器自动化、CI、安全扫描、人工 review、回归截图，都应该成为 session 的退出条件，而不是事后补救。
+
+可以用一个简单结构表示：
+
+```text
+Feishu thread / card / bot command
+  -> trigger / routine
+  -> coordinator
+  -> multiple agent sessions
+  -> verification
+  -> PR / doc / deploy / human approval
+  -> status back to Feishu
+```
+
+这里最重要的是闭环。飞书负责入口和人机协作，agent 负责执行，GitHub / CI / browser / Sentry 等系统负责提供可验证反馈，最后状态再回到飞书。
+
+## 飞书入口应该显示什么
+
+如果把飞书做成 agent operations console，我最关心的不是聊天气泡，而是任务对象。
+
+一个任务卡片至少应该有：
+
+- 目标：这次要完成什么；
+- 来源：来自哪条消息、issue、告警或人工按钮；
+- owner：谁发起，谁负责最终确认；
+- sessions：有哪些 agent session 正在跑；
+- status：queued、running、needs input、verifying、failed、ready for review、done；
+- artifacts：PR、文档、截图、日志、部署地址；
+- evidence：跑过哪些验证，失败过什么，怎么修的；
+- controls：暂停、继续、重试、接管、关闭、转交。
+
+这比“多会话列表”更接近真实工作。因为人真正需要的不是看 AI 每句话怎么想，而是知道任务有没有往前走，哪里需要自己介入，最后能不能信任这个结果。
+
+## 和 chat-first settlement 的关系
+
+这也连接到我之前写的 chat-first settlement。
+
+飞书里的自然语言消息很适合作为入口，但它不能直接等同于系统状态。一条消息可能只是闲聊，也可能意味着一个任务被创建、一个 owner 被改变、一个 PR 可以合并、一个告警被确认、一个 routine 应该暂停。
+
+所以需要 settlement layer：聊天仍然自然表达，settlement 负责把 durable consequence 写入任务状态。
+
+在多会话 agent 系统里，settlement 记录的就不只是用户和角色关系，而是 agent ops 状态：
+
+- 哪条消息创建了任务；
+- 哪个 session 接了任务；
+- 哪个验证结果改变了任务状态；
+- 哪个人批准了合并；
+- 哪次失败触发了 retry 或 escalaton；
+- 哪个产物成为最终交付。
+
+没有 settlement，飞书多会话会变成热闹的群聊；有 settlement，它才会变成可运行的工作系统。
+
+## 这类系统最容易失败的地方
+
+第一，只有会话，没有任务状态。多个 agent 都在说话，但没有一个明确的任务对象承载状态、产物和验收结果。
+
+第二，只有总结，没有原始证据。agent 说“我已经验证过”，但没有链接到测试输出、CI run、浏览器截图或命令日志。
+
+第三，只有自动化，没有接管点。人不知道什么时候该介入，也不知道介入后系统如何恢复。
+
+第四，只有触发，没有预算和权限。routine 能被任何消息触发，最后会引发成本失控、权限越界和噪音。
+
+第五，只有多 agent，没有协调协议。多个 session 并行跑，如果没有 owner、锁、冲突处理和合并策略，速度越快，漂移越快。
+
+这些失败模式说明，多会话管理不是 UI 问题，而是 agent runtime、workflow engine 和协作产品的交叉问题。
+
+## 我的判断
+
+Boris 这条视频让我更确定之前的判断：未来 AI coding 的关键产品形态不是“更大的输入框”，而是“可运行的 agent 工作台”。
+
+单个 agent 仍然会越来越强，但真正改变工程组织效率的是：
+
+- 多个 session 能并行；
+- routine 能按事件醒来；
+- agent 能自己验证；
+- 失败能自动回流；
+- 人能在关键节点接管；
+- 原始证据能被审计；
+- 状态能回到组织协作入口。
+
+飞书多会话管理如果继续往这个方向走，就不只是一个聊天插件，而是团队的 agent control plane。
+
+Claude Code 的 routines 展示了个人工程师侧的未来：我不再一直 prompt Claude Code，而是让 Claude 去 prompt Claude Code。飞书侧的对应版本应该是：我不再在群里反复催每个 agent，而是在群里管理一组能自我推进、能回报证据、能等待批准的工作单元。
+
+这才是我理解的多会话管理真正价值。
