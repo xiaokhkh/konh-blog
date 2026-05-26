@@ -132,21 +132,23 @@ input {
   pointer-events: none;
 }
 
-.sleeping-konh {
-  width: clamp(210px, 24vw, 286px);
-  height: clamp(172px, 23vw, 260px);
+.floating-konh {
+  --konh-follow-x: 0px;
+  --konh-follow-y: 0px;
+  --konh-tilt: 0deg;
+  width: clamp(180px, 22vw, 260px);
   margin: 0;
-  overflow: hidden;
   border-radius: 0;
   background: transparent;
-  transform: rotate(2deg);
+  transform: translate3d(var(--konh-follow-x), var(--konh-follow-y), 0) rotate(calc(2deg + var(--konh-tilt)));
+  will-change: transform;
 }
 
-.sleeping-konh video {
+.floating-konh img {
   width: 100%;
   height: auto;
   object-fit: contain;
-  transform: translateY(clamp(-90px, -8vw, -62px));
+  filter: drop-shadow(0 22px 34px rgba(0, 0, 0, 0.28));
 }
 
 .home-posts {
@@ -516,9 +518,8 @@ input {
     right: -26px;
   }
 
-  .sleeping-konh {
-    width: min(260px, 72vw);
-    height: clamp(190px, 56vw, 236px);
+  .floating-konh {
+    width: min(230px, 64vw);
   }
 
   .archive-row {

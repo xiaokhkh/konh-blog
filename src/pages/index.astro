@@ -24,9 +24,15 @@ const websiteJsonLd = {
   jsonLd={websiteJsonLd}
 >
   <div class="container home-shell">
-    <section class="page-character" aria-label="Konh character animation">
-      <div class="sleeping-konh">
-        <video src="/media/konh-idle.webm" autoplay muted loop playsinline></video>
+    <section class="page-character" aria-label="Konh character following the mouse">
+      <div class="floating-konh" data-konh-follow>
+        <img
+          data-konh-frame
+          src="/images/mascots/konh-follow-36/konh-18.webp"
+          alt="Konh"
+          width="520"
+          height="891"
+        />
       </div>
     </section>
 
@@ -48,4 +54,64 @@ const websiteJsonLd = {
       }
     </section>
   </div>
+
+  <script>
+    const character = document.querySelector('[data-konh-follow]');
+    const frameImage = document.querySelector('[data-konh-frame]');
+
+    if (character instanceof HTMLElement && frameImage instanceof HTMLImageElement) {
+      const frames = Array.from(
+        { length: 36 },
+        (_, index) => `/images/mascots/konh-follow-36/konh-${String(index).padStart(2, '0')}.webp`,
+      );
+      const state = {
+        x: 0,
+        y: 0,
+        tilt: 0,
+        targetX: 0,
+        targetY: 0,
+        targetTilt: 0,
+        frame: 0,
+        frameIndex: 18,
+      };
+
+      frames.forEach((src) => {
+        const image = new Image();
+        image.src = src;
+      });
+
+      const render = () => {
+        state.x += (state.targetX - state.x) * 0.12;
+        state.y += (state.targetY - state.y) * 0.12;
+        state.tilt += (state.targetTilt - state.tilt) * 0.14;
+
+        character.style.setProperty('--konh-follow-x', `${state.x.toFixed(2)}px`);
+        character.style.setProperty('--konh-follow-y', `${state.y.toFixed(2)}px`);
+        character.style.setProperty('--konh-tilt', `${state.tilt.toFixed(2)}deg`);
+
+        state.frame = requestAnimationFrame(render);
+      };
+
+      state.frame = requestAnimationFrame(render);
+
+      window.addEventListener('pointermove', (event) => {
+        const normalizedX = Math.min(Math.max(event.clientX / window.innerWidth, 0), 1) - 0.5;
+        const normalizedY = Math.min(Math.max(event.clientY / window.innerHeight, 0), 1) - 0.5;
+        const bounds = character.getBoundingClientRect();
+        const centerX = bounds.left + bounds.width / 2;
+        const centerY = bounds.top + bounds.height / 2;
+        const angle = Math.atan2(event.clientY - centerY, event.clientX - centerX);
+        const frameIndex = Math.round(((angle + Math.PI * 2) % (Math.PI * 2)) / (Math.PI * 2) * frames.length) % frames.length;
+
+        state.targetX = normalizedX * 72;
+        state.targetY = normalizedY * 44;
+        state.targetTilt = normalizedX * 9;
+
+        if (frameIndex !== state.frameIndex) {
+          state.frameIndex = frameIndex;
+          frameImage.src = frames[frameIndex];
+        }
+      });
+    }
+  </script>
 </BaseLayout>
