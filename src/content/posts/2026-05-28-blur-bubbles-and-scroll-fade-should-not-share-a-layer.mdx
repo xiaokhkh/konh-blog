@@ -1,0 +1,208 @@
+---
+title: "When backdrop-filter Fails, Look for the Stacking Context"
+description: "A CSS rendering note on why blur strength is often the wrong question: masks, transforms, and backdrop roots can change what backdrop-filter is allowed to sample."
+pubDate: 2026-05-28
+tags:
+  - frontend
+  - css
+  - debugging
+  - ui
+---
+
+Glass UI bugs often get misdiagnosed as tuning problems. The button is not blurry enough, so the blur radius goes from `8px` to `24px`. The edge fade looks weak, so the gradient gets darker. The visible symptom changes, but the underlying rendering model stays broken.
+
+The more useful question is:
+
+> What pixels is `backdrop-filter` actually allowed to sample?
+
+That question leads to stacking contexts, compositing boundaries, and backdrop roots. The implementation detail at the end is small. The important part is learning where the blur boundary moved.
+
+## The UI Constraint
+
+Consider a horizontally scrollable row of glass suggestion pills over a live chat surface. The desired behavior is:
+
+- each pill should blur the real pixels behind it;
+- pills should fade out when they are clipped by the scroll viewport;
+- the backdrop is not just a static background image. It may include chat bubbles, shadows, character layers, video, or other overlays.
+
+This sounds like a direct combination of two CSS features:
+
+- `backdrop-filter` for the glass blur;
+- `mask-image` for the scroll-edge fade.
+
+The failure mode appears when both concerns are placed on the same ancestor subtree.
+
+## What a Stacking Context Means
+
+A stacking context is a local z-axis world. Elements inside it stack relative to each other, and then the whole context participates as a single unit in its parent context.
+
+The factual pieces matter here:
+
+- MDN describes a [stacking context](https://developer.mozilla.org/en-US/docs/Understanding_CSS_z-index/The_stacking_context) as a context where child elements are stacked independently from outside elements, and the whole context is then considered as one unit in the parent stacking context.
+- A non-`none` `transform` creates a stacking context. This is listed in MDN's [`transform`](https://developer.mozilla.org/en-US/docs/Web/CSS/transform) documentation.
+- CSS `mask` creates a stacking context. MDN's [`mask`](https://developer.mozilla.org/en-US/docs/Web/CSS/mask) property reference marks "Creates stacking context: yes."
+- [`mask-image`](https://developer.mozilla.org/en-US/docs/Web/CSS/mask-image) hides part of an element according to mask alpha or luminance. It is not a decorative overlay color.
+
+For `backdrop-filter`, there is one more concept: the backdrop root.
+
+MDN's [`backdrop-filter`](https://developer.mozilla.org/en-US/docs/Web/CSS/backdrop-filter) documentation states that the filter applies to pixels between the element and its nearest backdrop root. It also lists backdrop-root-forming cases, including non-`none` `filter`, `opacity < 1`, non-`none` `mask` / `mask-image` / `clip-path`, non-`none` `backdrop-filter`, non-`normal` `mix-blend-mode`, and `will-change` values that reference these properties.
+
+So the practical rule is:
+
+> Stacking context is the entry point for debugging changed rendering boundaries. Backdrop root is the direct rule that decides where `backdrop-filter` sampling stops.
+
+They are not the same term, but they often appear together in this class of bug. Once a subtree is transformed, masked, filtered, blended, or otherwise isolated, "the pixels behind this element" may no longer mean "the full page behind this element."
+
+## Blur Has an Input
+
+`backdrop-filter` does not blur the element's own background. It does not blur an arbitrary image. It filters pixels that have already been painted behind the element, up to the nearest backdrop root.
+
+If a glass pill stops looking glassy, the first diagnostic question should not be:
+
+> Is the blur radius large enough?
+
+It should be:
+
+> Can this element still sample the real backdrop?
+
+If a parent has `mask-image`, `filter`, `opacity < 1`, `clip-path`, `backdrop-filter`, `mix-blend-mode`, or certain `will-change` values, that parent can become the boundary where backdrop sampling stops. If a parent has `transform`, it creates another stacking context and often indicates that the subtree is being composited as a separate rendering unit.
+
+The bug is not just visual. The rendering stage has changed.
+
+## The Bad Layering: Mask Above Blur
+
+The tempting structure is:
+
+```tsx
+<div className="scroll-row" style={{ maskImage }}>
+  <button style={{ backdropFilter: 'blur(24px)' }} />
+</div>
+```
+
+The scroll row owns the fade, and the button owns the blur. On paper that sounds clean.
+
+In the rendering model, it is the wrong order. The `mask-image` sits on an ancestor of the blurred element. That ancestor can become the nearest backdrop root. The child button's `backdrop-filter` then stops at the masked scroll row instead of reaching the real chat surface behind it.
+
+The visible result is familiar: the edge fade exists, but the glass blur disappears, looks empty, or samples the wrong surface.
+
+A similar issue can appear with animation utilities. A completed visual animation may leave an element with `transform: translateY(0px)`. The value looks harmless, but it is still not `none`; it can still create a stacking context. A zero transform can be enough to change the rendering boundary even when the element appears stationary.
+
+## False Fix: Simulate Blur with a Background Image
+
+One workaround is to put a duplicate background image inside the pill and blur that:
+
+```tsx
+<span
+  className="absolute -inset-6 bg-cover bg-center blur-[24px]"
+  style={{ backgroundImage: `url(${chatBackgroundImage})` }}
+/>
+```
+
+This only works when the true backdrop is effectively the same static image. It fails for live UI surfaces because the actual backdrop can include:
+
+- chat bubbles at the current scroll position;
+- bottom shadows;
+- character layers;
+- video or transient effects;
+- other overlays.
+
+The required input is not "the page background image." The required input is "the final pixels currently behind the pill."
+
+Duplicating and aligning a background image bypasses the stacking-context problem by replacing the input. That is why it can appear close but never be correct for a moving, layered interface.
+
+## False Fix: Use an Overlay as the Fade
+
+```css
+background: linear-gradient(to left, rgba(0,0,0,.42), transparent);
+pointer-events: none;
+```
+
+An overlay can be non-interactive and visually darken the edge. It cannot cut the pill.
+
+The pill still exists. Its text, border, and backdrop blur still exist. They are merely covered by another layer. That is not a fade-out; it is a tint. On bright or detailed backgrounds, the difference is obvious.
+
+Overlays are useful for environmental shading. They are not a replacement for clipping the element's own final pixels.
+
+## Better Layering: Move the Boundary Down
+
+The scroll row should own layout and scrolling. The pill should own its glass effect. The mask should only apply to the pill when that pill is actually being clipped.
+
+The safer structure is:
+
+```tsx
+<div className="scroll-row">
+  <button style={{ backdropFilter: 'blur(24px)', maskImage }} />
+</div>
+```
+
+This changes the rendering boundary:
+
+- the scroll row does not become a masked ancestor of the blurred pill;
+- the button can still sample the real backdrop;
+- the mask cuts the button's own final output.
+
+The mask can still create a boundary. The difference is where that boundary lives. If it lives on the pill, it clips the pill. If it lives on the scroll row, it can become the ancestor boundary that changes what the pill is allowed to blur.
+
+## Only Mask When There Is Real Clipping
+
+The implementation detail follows from the same principle: complete pills should not be faded.
+
+First determine whether the scroll row can actually clip content on each side:
+
+```ts
+const maxScrollLeft = scrollElement.scrollWidth - scrollElement.clientWidth;
+const canClipLeft = scrollElement.scrollLeft > 6;
+const canClipRight = maxScrollLeft - scrollElement.scrollLeft > 6;
+```
+
+Then determine whether each pill intersects a fade zone:
+
+```ts
+const hasLeftFade =
+  canClipLeft &&
+  buttonRect.left < scrollRect.left + LEFT_FADE_WIDTH &&
+  buttonRect.right > scrollRect.left;
+
+const hasRightFade =
+  canClipRight &&
+  buttonRect.right > scrollRect.right - RIGHT_FADE_WIDTH &&
+  buttonRect.left < scrollRect.right;
+```
+
+Only then apply `mask-image` to that pill. Otherwise remove it:
+
+```ts
+button.style.removeProperty('mask-image');
+button.style.removeProperty('-webkit-mask-image');
+```
+
+That keeps complete pills complete and fades only the elements that are actually being clipped.
+
+## Diagnostic Rule
+
+When `backdrop-filter` fails, inspect the ancestor chain before changing the blur radius.
+
+Look for:
+
+- `mask` or `mask-image`;
+- `filter`;
+- `opacity < 1`;
+- `clip-path`;
+- `backdrop-filter`;
+- `mix-blend-mode`;
+- `will-change` that references those properties;
+- non-`none` `transform`.
+
+Some of these create stacking contexts. Some create backdrop roots. Some do both. The shared engineering lesson is that these properties are not only visual decorations; they can change how the browser isolates, composites, and samples pixels.
+
+The shortest rule is:
+
+> Protect the sampling boundary for `backdrop-filter`. Apply `mask-image` only to the element whose final pixels should be clipped.
+
+## References
+
+- [MDN: Stacking context](https://developer.mozilla.org/en-US/docs/Understanding_CSS_z-index/The_stacking_context)
+- [MDN: backdrop-filter](https://developer.mozilla.org/en-US/docs/Web/CSS/backdrop-filter)
+- [MDN: mask](https://developer.mozilla.org/en-US/docs/Web/CSS/mask)
+- [MDN: mask-image](https://developer.mozilla.org/en-US/docs/Web/CSS/mask-image)
+- [MDN: transform](https://developer.mozilla.org/en-US/docs/Web/CSS/transform)
