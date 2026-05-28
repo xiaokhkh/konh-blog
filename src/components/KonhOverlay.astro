@@ -1,0 +1,120 @@
+<aside class="konh-overlay" data-konh-overlay aria-label="Konh mascot" tabindex="0">
+  <div class="konh-overlay-character" data-konh-character>
+    <div class="konh-overlay-frame" data-konh-frame aria-hidden="true"></div>
+  </div>
+</aside>
+
+<script>
+  const overlay = document.querySelector('[data-konh-overlay]');
+  const character = document.querySelector('[data-konh-character]');
+  const frame = document.querySelector('[data-konh-frame]');
+
+  if (overlay instanceof HTMLElement && character instanceof HTMLElement && frame instanceof HTMLElement) {
+    const frameCount = 36;
+    const storageKey = 'konh-overlay-position';
+    const state = {
+      dragging: false,
+      pointerId: -1,
+      dragOffsetX: 0,
+      dragOffsetY: 0,
+      raf: 0,
+      pendingPointer: null as null | { x: number; y: number },
+    };
+
+    const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+
+    const setPosition = (left: number, top: number) => {
+      const bounds = overlay.getBoundingClientRect();
+      const nextLeft = clamp(left, 12, window.innerWidth - bounds.width - 12);
+      const nextTop = clamp(top, 12, window.innerHeight - bounds.height - 12);
+
+      overlay.style.left = `${nextLeft}px`;
+      overlay.style.top = `${nextTop}px`;
+      overlay.style.right = 'auto';
+    };
+
+    const restorePosition = () => {
+      const saved = localStorage.getItem(storageKey);
+      if (!saved) return;
+
+      try {
+        const position = JSON.parse(saved) as { left?: number; top?: number };
+        if (typeof position.left === 'number' && typeof position.top === 'number') {
+          setPosition(position.left, position.top);
+        }
+      } catch {
+        localStorage.removeItem(storageKey);
+      }
+    };
+
+    const savePosition = () => {
+      const bounds = overlay.getBoundingClientRect();
+      localStorage.setItem(storageKey, JSON.stringify({ left: bounds.left, top: bounds.top }));
+    };
+
+    const updateGaze = (x: number, y: number) => {
+      const bounds = overlay.getBoundingClientRect();
+      const centerX = bounds.left + bounds.width / 2;
+      const centerY = bounds.top + bounds.height / 2;
+      const angle = Math.atan2(y - centerY, x - centerX);
+      const normalizedAngle = (angle + Math.PI * 2) % (Math.PI * 2);
+      const frameIndex = Math.round((normalizedAngle / (Math.PI * 2)) * frameCount) % frameCount;
+      const normalizedX = clamp(x / window.innerWidth, 0, 1) - 0.5;
+      const normalizedY = clamp(y / window.innerHeight, 0, 1) - 0.5;
+
+      frame.style.setProperty('--konh-col', String(frameIndex % 6));
+      frame.style.setProperty('--konh-row', String(Math.floor(frameIndex / 6)));
+      character.style.setProperty('--konh-follow-x', `${(normalizedX * 24).toFixed(2)}px`);
+      character.style.setProperty('--konh-follow-y', `${(normalizedY * 16).toFixed(2)}px`);
+      character.style.setProperty('--konh-tilt', `${(normalizedX * 7).toFixed(2)}deg`);
+    };
+
+    const scheduleGaze = (x: number, y: number) => {
+      state.pendingPointer = { x, y };
+      if (state.raf) return;
+
+      state.raf = requestAnimationFrame(() => {
+        state.raf = 0;
+        if (state.pendingPointer) {
+          updateGaze(state.pendingPointer.x, state.pendingPointer.y);
+        }
+      });
+    };
+
+    restorePosition();
+
+    window.addEventListener('pointermove', (event) => {
+      scheduleGaze(event.clientX, event.clientY);
+
+      if (!state.dragging || event.pointerId !== state.pointerId) return;
+      setPosition(event.clientX - state.dragOffsetX, event.clientY - state.dragOffsetY);
+    });
+
+    overlay.addEventListener('pointerdown', (event) => {
+      if (event.button !== 0) return;
+
+      const bounds = overlay.getBoundingClientRect();
+      state.dragging = true;
+      state.pointerId = event.pointerId;
+      state.dragOffsetX = event.clientX - bounds.left;
+      state.dragOffsetY = event.clientY - bounds.top;
+      overlay.classList.add('is-dragging');
+      overlay.setPointerCapture(event.pointerId);
+    });
+
+    overlay.addEventListener('pointerup', (event) => {
+      if (!state.dragging || event.pointerId !== state.pointerId) return;
+
+      state.dragging = false;
+      state.pointerId = -1;
+      overlay.classList.remove('is-dragging');
+      overlay.releasePointerCapture(event.pointerId);
+      savePosition();
+    });
+
+    window.addEventListener('resize', () => {
+      const bounds = overlay.getBoundingClientRect();
+      setPosition(bounds.left, bounds.top);
+    });
+  }
+</script>

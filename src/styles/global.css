@@ -119,36 +119,52 @@ input {
 
 .home-shell {
   position: relative;
-  min-height: 430px;
   padding-top: clamp(64px, 9vw, 96px);
 }
 
-.page-character {
-  position: absolute;
-  top: clamp(42px, 8vw, 78px);
-  right: clamp(-46px, -5vw, -18px);
-  z-index: 0;
-  padding: 0;
-  pointer-events: none;
+.konh-overlay {
+  position: fixed;
+  top: clamp(88px, 12vh, 132px);
+  right: clamp(16px, 4vw, 42px);
+  z-index: 60;
+  width: clamp(154px, 18vw, 240px);
+  aspect-ratio: 26 / 38;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
 }
 
-.floating-konh {
+.konh-overlay:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 6px;
+}
+
+.konh-overlay.is-dragging {
+  cursor: grabbing;
+}
+
+.konh-overlay-character {
   --konh-follow-x: 0px;
   --konh-follow-y: 0px;
   --konh-tilt: 0deg;
-  width: clamp(180px, 22vw, 260px);
-  margin: 0;
-  border-radius: 0;
-  background: transparent;
+  width: 100%;
+  height: 100%;
   transform: translate3d(var(--konh-follow-x), var(--konh-follow-y), 0) rotate(calc(2deg + var(--konh-tilt)));
+  transition: transform 160ms ease-out;
   will-change: transform;
 }
 
-.floating-konh img {
+.konh-overlay-frame {
+  --konh-col: 3;
+  --konh-row: 3;
   width: 100%;
-  height: auto;
-  object-fit: contain;
+  height: 100%;
+  background-image: url("/images/mascots/konh-gaze-sprite.webp");
+  background-repeat: no-repeat;
+  background-size: 600% 600%;
+  background-position: calc(var(--konh-col) * 20%) calc(var(--konh-row) * 20%);
   filter: drop-shadow(0 22px 34px rgba(0, 0, 0, 0.28));
+  pointer-events: none;
 }
 
 .home-posts {
@@ -509,17 +525,13 @@ input {
   }
 
   .home-shell {
-    min-height: 500px;
-    padding-top: 246px;
+    padding-top: 42px;
   }
 
-  .page-character {
-    top: -18px;
-    right: -26px;
-  }
-
-  .floating-konh {
-    width: min(230px, 64vw);
+  .konh-overlay {
+    width: min(148px, 38vw);
+    top: 92px;
+    right: 10px;
   }
 
   .archive-row {
