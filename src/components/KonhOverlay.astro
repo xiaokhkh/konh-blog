@@ -12,25 +12,81 @@
   if (overlay instanceof HTMLElement && character instanceof HTMLElement && frame instanceof HTMLElement) {
     const frameCount = 36;
     const storageKey = 'konh-overlay-position';
+    const clientIdKey = 'konh-overlay-client-id';
+    const syncEndpoint = '/api/konh-overlay';
+    const syncInterval = 700;
+    const publishInterval = 120;
     const state = {
       dragging: false,
       pointerId: -1,
       dragOffsetX: 0,
       dragOffsetY: 0,
       raf: 0,
+      publishTimer: 0,
+      lastPublishAt: 0,
+      lastSharedAt: 0,
+      syncFailures: 0,
+      syncEnabled: true,
       pendingPointer: null as null | { x: number; y: number },
     };
 
     const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+    const createClientId = () => {
+      if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+      return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+    };
+
+    const getClientId = () => {
+      const saved = localStorage.getItem(clientIdKey);
+      if (saved) return saved;
+
+      const clientId = createClientId();
+      localStorage.setItem(clientIdKey, clientId);
+      return clientId;
+    };
+
+    const clientId = getClientId();
+
+    const getPositionRange = () => {
+      const bounds = overlay.getBoundingClientRect();
+      return {
+        width: bounds.width,
+        height: bounds.height,
+        minLeft: 12,
+        minTop: 12,
+        maxLeft: Math.max(12, window.innerWidth - bounds.width - 12),
+        maxTop: Math.max(12, window.innerHeight - bounds.height - 12),
+      };
+    };
+
+    const normalizePosition = () => {
+      const bounds = overlay.getBoundingClientRect();
+      const range = getPositionRange();
+      const availableX = Math.max(1, range.maxLeft - range.minLeft);
+      const availableY = Math.max(1, range.maxTop - range.minTop);
+
+      return {
+        x: clamp((bounds.left - range.minLeft) / availableX, 0, 1),
+        y: clamp((bounds.top - range.minTop) / availableY, 0, 1),
+      };
+    };
 
     const setPosition = (left: number, top: number) => {
-      const bounds = overlay.getBoundingClientRect();
-      const nextLeft = clamp(left, 12, window.innerWidth - bounds.width - 12);
-      const nextTop = clamp(top, 12, window.innerHeight - bounds.height - 12);
+      const range = getPositionRange();
+      const nextLeft = clamp(left, range.minLeft, range.maxLeft);
+      const nextTop = clamp(top, range.minTop, range.maxTop);
 
       overlay.style.left = `${nextLeft}px`;
       overlay.style.top = `${nextTop}px`;
       overlay.style.right = 'auto';
+    };
+
+    const setNormalizedPosition = (x: number, y: number) => {
+      const range = getPositionRange();
+      setPosition(
+        range.minLeft + (range.maxLeft - range.minLeft) * clamp(x, 0, 1),
+        range.minTop + (range.maxTop - range.minTop) * clamp(y, 0, 1),
+      );
     };
 
     const restorePosition = () => {
@@ -50,6 +106,81 @@
     const savePosition = () => {
       const bounds = overlay.getBoundingClientRect();
       localStorage.setItem(storageKey, JSON.stringify({ left: bounds.left, top: bounds.top }));
+    };
+
+    const publishPosition = async () => {
+      if (!state.syncEnabled) return;
+
+      const position = normalizePosition();
+
+      try {
+        const response = await fetch(syncEndpoint, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ ...position, clientId }),
+          keepalive: true,
+        });
+
+        if (!response.ok) throw new Error(`Sync failed: ${response.status}`);
+
+        const payload = (await response.json()) as {
+          position?: { updatedAt?: number; clientId?: string };
+        };
+        state.syncFailures = 0;
+
+        if (payload.position?.updatedAt) {
+          state.lastSharedAt = Math.max(state.lastSharedAt, payload.position.updatedAt);
+        }
+      } catch {
+        state.syncFailures += 1;
+        state.syncEnabled = state.syncFailures < 3;
+      }
+    };
+
+    const schedulePublish = (force = false) => {
+      if (!state.syncEnabled) return;
+
+      const now = Date.now();
+      const delay = force ? 0 : Math.max(0, publishInterval - (now - state.lastPublishAt));
+
+      window.clearTimeout(state.publishTimer);
+      state.publishTimer = window.setTimeout(() => {
+        state.lastPublishAt = Date.now();
+        publishPosition();
+      }, delay);
+    };
+
+    const pullSharedPosition = async () => {
+      if (!state.syncEnabled || state.dragging || document.hidden) return;
+
+      try {
+        const response = await fetch(syncEndpoint, { cache: 'no-store' });
+        if (!response.ok) throw new Error(`Sync failed: ${response.status}`);
+
+        const payload = (await response.json()) as {
+          position?: { x?: number; y?: number; updatedAt?: number; clientId?: string } | null;
+        };
+        state.syncFailures = 0;
+        const position = payload.position;
+
+        if (
+          !position ||
+          position.clientId === clientId ||
+          typeof position.x !== 'number' ||
+          typeof position.y !== 'number' ||
+          typeof position.updatedAt !== 'number' ||
+          position.updatedAt <= state.lastSharedAt
+        ) {
+          return;
+        }
+
+        state.lastSharedAt = position.updatedAt;
+        setNormalizedPosition(position.x, position.y);
+        savePosition();
+      } catch {
+        state.syncFailures += 1;
+        state.syncEnabled = state.syncFailures < 3;
+      }
     };
 
     const updateGaze = (x: number, y: number) => {
@@ -88,6 +219,7 @@
 
       if (!state.dragging || event.pointerId !== state.pointerId) return;
       setPosition(event.clientX - state.dragOffsetX, event.clientY - state.dragOffsetY);
+      schedulePublish();
     });
 
     overlay.addEventListener('pointerdown', (event) => {
@@ -110,11 +242,15 @@
       overlay.classList.remove('is-dragging');
       overlay.releasePointerCapture(event.pointerId);
       savePosition();
+      schedulePublish(true);
     });
 
     window.addEventListener('resize', () => {
       const bounds = overlay.getBoundingClientRect();
       setPosition(bounds.left, bounds.top);
     });
+
+    window.setInterval(pullSharedPosition, syncInterval);
+    pullSharedPosition();
   }
 </script>
