@@ -27,6 +27,9 @@
       lastSharedAt: 0,
       syncFailures: 0,
       syncEnabled: true,
+      pollingTimer: 0,
+      sseConnectedOnce: false,
+      eventSource: null as EventSource | null,
       pendingPointer: null as null | { x: number; y: number },
     };
 
@@ -108,6 +111,27 @@
       localStorage.setItem(storageKey, JSON.stringify({ left: bounds.left, top: bounds.top }));
     };
 
+    const applySharedPosition = (position: {
+      x?: number;
+      y?: number;
+      updatedAt?: number;
+      clientId?: string;
+    }) => {
+      if (
+        position.clientId === clientId ||
+        typeof position.x !== 'number' ||
+        typeof position.y !== 'number' ||
+        typeof position.updatedAt !== 'number' ||
+        position.updatedAt <= state.lastSharedAt
+      ) {
+        return;
+      }
+
+      state.lastSharedAt = position.updatedAt;
+      setNormalizedPosition(position.x, position.y);
+      savePosition();
+    };
+
     const publishPosition = async () => {
       if (!state.syncEnabled) return;
 
@@ -163,24 +187,54 @@
         state.syncFailures = 0;
         const position = payload.position;
 
-        if (
-          !position ||
-          position.clientId === clientId ||
-          typeof position.x !== 'number' ||
-          typeof position.y !== 'number' ||
-          typeof position.updatedAt !== 'number' ||
-          position.updatedAt <= state.lastSharedAt
-        ) {
-          return;
-        }
-
-        state.lastSharedAt = position.updatedAt;
-        setNormalizedPosition(position.x, position.y);
-        savePosition();
+        if (position) applySharedPosition(position);
       } catch {
         state.syncFailures += 1;
         state.syncEnabled = state.syncFailures < 3;
       }
+    };
+
+    const startPollingFallback = () => {
+      if (state.pollingTimer) return;
+      state.pollingTimer = window.setInterval(pullSharedPosition, syncInterval);
+      pullSharedPosition();
+    };
+
+    const startSseSync = () => {
+      if (!('EventSource' in window)) {
+        startPollingFallback();
+        return;
+      }
+
+      const eventSource = new EventSource(syncEndpoint);
+      state.eventSource = eventSource;
+
+      eventSource.addEventListener('open', () => {
+        state.sseConnectedOnce = true;
+        state.syncFailures = 0;
+      });
+
+      eventSource.addEventListener('position', (event) => {
+        if (state.dragging) return;
+
+        try {
+          applySharedPosition(JSON.parse((event as MessageEvent).data));
+          state.syncFailures = 0;
+        } catch {
+          state.syncFailures += 1;
+        }
+      });
+
+      eventSource.addEventListener('error', () => {
+        if (state.sseConnectedOnce) return;
+
+        state.syncFailures += 1;
+        if (state.syncFailures < 3) return;
+
+        eventSource.close();
+        if (state.eventSource === eventSource) state.eventSource = null;
+        startPollingFallback();
+      });
     };
 
     const updateGaze = (x: number, y: number) => {
@@ -250,7 +304,6 @@
       setPosition(bounds.left, bounds.top);
     });
 
-    window.setInterval(pullSharedPosition, syncInterval);
-    pullSharedPosition();
+    startSseSync();
   }
 </script>

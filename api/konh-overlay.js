@@ -2,6 +2,13 @@ import { getCache } from '@vercel/functions';
 
 const cache = getCache({ namespace: 'konh-overlay' });
 const positionKey = 'position';
+const streamPollMs = 500;
+const streamMaxMs = 55_000;
+const heartbeatMs = 15_000;
+
+export const config = {
+  maxDuration: 60,
+};
 
 const json = (response, status, body) => {
   response.status(status);
@@ -16,6 +23,12 @@ const toFiniteNumber = (value) => {
 };
 
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const isSseRequest = (request) => {
+  const accept = request.headers?.accept ?? request.headers?.Accept ?? '';
+  return String(accept).includes('text/event-stream');
+};
 
 const readBody = (request) => {
   if (typeof request.body === 'object' && request.body !== null) return request.body;
@@ -28,6 +41,50 @@ const readBody = (request) => {
   }
 };
 
+const writeEvent = (response, event, data, id) => {
+  if (id) response.write(`id: ${id}\n`);
+  response.write(`event: ${event}\n`);
+  response.write(`data: ${JSON.stringify(data)}\n\n`);
+};
+
+const streamPosition = async (request, response) => {
+  response.writeHead(200, {
+    'content-type': 'text/event-stream; charset=utf-8',
+    'cache-control': 'no-cache, no-transform',
+    connection: 'keep-alive',
+    'x-accel-buffering': 'no',
+  });
+  response.flushHeaders?.();
+  response.write('retry: 1000\n\n');
+
+  let closed = false;
+  let lastHeartbeatAt = Date.now();
+  let lastUpdatedAt = Number(request.headers?.['last-event-id']) || 0;
+  const startedAt = Date.now();
+
+  request.on?.('close', () => {
+    closed = true;
+  });
+
+  while (!closed && Date.now() - startedAt < streamMaxMs) {
+    const position = await cache.get(positionKey);
+
+    if (position && typeof position.updatedAt === 'number' && position.updatedAt > lastUpdatedAt) {
+      lastUpdatedAt = position.updatedAt;
+      writeEvent(response, 'position', position, String(position.updatedAt));
+    }
+
+    if (Date.now() - lastHeartbeatAt > heartbeatMs) {
+      response.write(': keepalive\n\n');
+      lastHeartbeatAt = Date.now();
+    }
+
+    await sleep(streamPollMs);
+  }
+
+  if (!closed) response.end();
+};
+
 export default async function handler(request, response) {
   if (request.method === 'OPTIONS') {
     response.setHeader('allow', 'GET, POST');
@@ -36,6 +93,11 @@ export default async function handler(request, response) {
   }
 
   if (request.method === 'GET') {
+    if (isSseRequest(request)) {
+      await streamPosition(request, response);
+      return;
+    }
+
     const position = await cache.get(positionKey);
     json(response, 200, { position: position ?? null });
     return;
