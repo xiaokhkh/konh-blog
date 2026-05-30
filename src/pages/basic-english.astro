@@ -1,0 +1,1076 @@
+---
+import { basicEnglishCards, basicEnglishCategories, basicEnglishDayCount } from '@/data/basicEnglishCards';
+import BaseLayout from '@/layouts/BaseLayout.astro';
+
+const pageJsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'LearningResource',
+  name: 'Basic English 850 SRS Cards',
+  description: "A local spaced-repetition card tool for Ogden's Basic English 850 words.",
+  inLanguage: ['zh-CN', 'en'],
+};
+---
+
+<BaseLayout
+  title="Basic English 850 | konh"
+  description="用本地 SRS 词卡复习 Ogden Basic English 850 个核心词。"
+  jsonLd={pageJsonLd}
+>
+  <section class="basic-shell" aria-labelledby="basic-title" data-pagefind-ignore>
+    <header class="basic-hero">
+      <div class="hero-copy">
+        <span class="eyebrow">Ogden Basic English</span>
+        <h1 id="basic-title"><span>Basic</span><span>English</span><span>850</span></h1>
+        <p>把 850 个基础词做成每天可清空的小卡组。发音走真实 MP3，进度只存在这台浏览器。</p>
+      </div>
+      <div class="hero-stats" aria-label="学习进度">
+        <div>
+          <strong id="due-count">850</strong>
+          <span>今日到期</span>
+        </div>
+        <div>
+          <strong id="studied-count">0</strong>
+          <span>已复习</span>
+        </div>
+        <div>
+          <strong id="stable-count">0</strong>
+          <span>稳定卡</span>
+        </div>
+      </div>
+    </header>
+
+    <div class="study-board">
+      <aside class="study-controls" aria-label="学习控制">
+        <div class="control-block">
+          <span class="control-label">模式</span>
+          <div class="segmented" role="group" aria-label="学习模式">
+            <button class="mode-button is-active" type="button" data-mode="due">Due now</button>
+            <button class="mode-button" type="button" data-mode="path">15-day path</button>
+            <button class="mode-button" type="button" data-mode="all">All words</button>
+          </div>
+        </div>
+
+        <div class="control-block" id="day-control">
+          <label class="control-label" for="day-select">天数</label>
+          <select id="day-select">
+            {Array.from({ length: basicEnglishDayCount }, (_, index) => <option value={index + 1}>第 {index + 1} 天</option>)}
+          </select>
+        </div>
+
+        <div class="control-block">
+          <span class="control-label">类别</span>
+          <div class="category-filters" role="group" aria-label="类别筛选">
+            <button class="category-button is-active" type="button" data-category="all">全部</button>
+            {
+              basicEnglishCategories.map((category) => (
+                <button class="category-button" type="button" data-category={category.value}>
+                  {category.value}
+                </button>
+              ))
+            }
+          </div>
+        </div>
+
+        <div class="control-actions">
+          <button id="export-progress" type="button">导出进度</button>
+          <button id="reset-progress" type="button">重置</button>
+        </div>
+      </aside>
+
+      <div class="card-stage">
+        <div class="queue-strip" aria-live="polite">
+          <span id="queue-count">0 张</span>
+          <span id="queue-mode">Due now</span>
+        </div>
+
+        <article class="word-card" id="word-card">
+          <div class="card-topline">
+            <span class="category-chip" id="card-category">Operations</span>
+            <span class="progress-chip" id="card-progress">新卡</span>
+          </div>
+
+          <div class="word-row">
+            <div>
+              <span class="word-kicker" id="card-day">Day 1</span>
+              <h2 id="card-word">come</h2>
+            </div>
+            <button class="listen-button" id="listen-button" type="button" aria-label="播放发音" title="P">
+              <span aria-hidden="true">▶</span>
+            </button>
+          </div>
+
+          <div class="card-back" id="card-back" hidden>
+            <dl>
+              <div>
+                <dt>中文</dt>
+                <dd id="card-meaning">来</dd>
+              </div>
+              <div>
+                <dt>例句</dt>
+                <dd>
+                  <p id="card-example-en">We use come to make a short Basic English sentence.</p>
+                  <p id="card-example-zh">我们用“come”来组成一句短的基础英语。</p>
+                </dd>
+              </div>
+              <div>
+                <dt>变体</dt>
+                <dd id="card-variants">无</dd>
+              </div>
+              <div>
+                <dt>发音</dt>
+                <dd id="pronunciation-status">可播放 MP3</dd>
+              </div>
+            </dl>
+          </div>
+
+          <div class="card-front-note" id="card-front-note">翻开后选择熟悉度</div>
+        </article>
+
+        <div class="empty-review" id="empty-review" hidden>
+          <strong>这组卡片已清空</strong>
+          <span>换一个模式或再来一轮。</span>
+        </div>
+
+        <div class="card-actions" aria-label="复习评分">
+          <button class="reveal-button" id="reveal-button" type="button">翻开</button>
+          <button class="next-button" id="next-button" type="button">下一张</button>
+          <button class="rating-button again" type="button" data-rating="Again" title="1">Again</button>
+          <button class="rating-button hard" type="button" data-rating="Hard" title="2">Hard</button>
+          <button class="rating-button good" type="button" data-rating="Good" title="3">Good</button>
+          <button class="rating-button easy" type="button" data-rating="Easy" title="4">Easy</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <script is:inline define:vars={{ cards: basicEnglishCards, dayCount: basicEnglishDayCount }}>
+    (() => {
+      const STORAGE_KEY = 'konh-basic-english-srs-v1';
+      const todayStamp = () => {
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      };
+
+      const addDays = (stamp, days) => {
+        const [year, month, day] = stamp.split('-').map(Number);
+        const date = new Date(year, month - 1, day);
+        date.setDate(date.getDate() + days);
+        return [
+          date.getFullYear(),
+          String(date.getMonth() + 1).padStart(2, '0'),
+          String(date.getDate()).padStart(2, '0'),
+        ].join('-');
+      };
+
+      const daysBetween = (fromStamp, toStamp) => {
+        const from = new Date(`${fromStamp}T00:00:00`);
+        const to = new Date(`${toStamp}T00:00:00`);
+        return Math.round((to.getTime() - from.getTime()) / 86400000);
+      };
+
+      const defaultStore = () => ({
+        version: 1,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        cards: {},
+        audioUnavailable: {},
+      });
+
+      const loadStore = () => {
+        try {
+          const raw = localStorage.getItem(STORAGE_KEY);
+          if (!raw) return defaultStore();
+          const parsed = JSON.parse(raw);
+          return {
+            ...defaultStore(),
+            ...parsed,
+            cards: parsed.cards ?? {},
+            audioUnavailable: parsed.audioUnavailable ?? {},
+          };
+        } catch {
+          return defaultStore();
+        }
+      };
+
+      let store = loadStore();
+      const cardById = new Map(cards.map((card) => [card.id, card]));
+      const state = {
+        mode: 'due',
+        category: 'all',
+        day: 1,
+        revealed: false,
+        sessionIds: [],
+        index: 0,
+        audioStatus: {},
+      };
+
+      let audioContext;
+      let userInteracted = false;
+      let currentAudio;
+
+      const els = {
+        dueCount: document.querySelector('#due-count'),
+        studiedCount: document.querySelector('#studied-count'),
+        stableCount: document.querySelector('#stable-count'),
+        queueCount: document.querySelector('#queue-count'),
+        queueMode: document.querySelector('#queue-mode'),
+        dayControl: document.querySelector('#day-control'),
+        daySelect: document.querySelector('#day-select'),
+        wordCard: document.querySelector('#word-card'),
+        emptyReview: document.querySelector('#empty-review'),
+        cardCategory: document.querySelector('#card-category'),
+        cardProgress: document.querySelector('#card-progress'),
+        cardDay: document.querySelector('#card-day'),
+        cardWord: document.querySelector('#card-word'),
+        cardBack: document.querySelector('#card-back'),
+        cardMeaning: document.querySelector('#card-meaning'),
+        cardExampleEn: document.querySelector('#card-example-en'),
+        cardExampleZh: document.querySelector('#card-example-zh'),
+        cardVariants: document.querySelector('#card-variants'),
+        pronunciationStatus: document.querySelector('#pronunciation-status'),
+        cardFrontNote: document.querySelector('#card-front-note'),
+        listenButton: document.querySelector('#listen-button'),
+        revealButton: document.querySelector('#reveal-button'),
+        nextButton: document.querySelector('#next-button'),
+      };
+
+      const saveStore = () => {
+        store.updatedAt = new Date().toISOString();
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+      };
+
+      const noteInteraction = () => {
+        userInteracted = true;
+      };
+
+      const progressFor = (card) => store.cards[card.id];
+      const isDue = (card) => {
+        const progress = progressFor(card);
+        return !progress?.due || progress.due <= todayStamp();
+      };
+
+      const filteredCards = () => {
+        let list = cards;
+        if (state.category !== 'all') {
+          list = list.filter((card) => card.category === state.category);
+        }
+        if (state.mode === 'path') {
+          list = list.filter((card) => card.dayGroup === state.day);
+        }
+        if (state.mode === 'due') {
+          list = list.filter(isDue);
+        }
+        return list;
+      };
+
+      const resetSession = () => {
+        state.sessionIds = filteredCards().map((card) => card.id);
+        state.index = 0;
+        state.revealed = false;
+      };
+
+      const currentCard = () => cardById.get(state.sessionIds[state.index]);
+
+      const totalDueCount = () => cards.filter(isDue).length;
+      const reviewedCount = () => Object.keys(store.cards).length;
+      const stableCount = () => Object.values(store.cards).filter((progress) => (progress.interval ?? 0) >= 7).length;
+
+      const progressLabel = (card) => {
+        const progress = progressFor(card);
+        if (!progress) return '新卡';
+        const today = todayStamp();
+        if (!progress.due || progress.due <= today) return '今天到期';
+        const days = daysBetween(today, progress.due);
+        return `${days} 天后`;
+      };
+
+      const modeLabel = () => {
+        if (state.mode === 'due') return 'Due now';
+        if (state.mode === 'path') return `15-day path · Day ${state.day}`;
+        return 'All words';
+      };
+
+      const renderStats = () => {
+        els.dueCount.textContent = String(totalDueCount());
+        els.studiedCount.textContent = String(reviewedCount());
+        els.stableCount.textContent = String(stableCount());
+        els.queueCount.textContent = `${Math.max(state.sessionIds.length - state.index, 0)} 张`;
+        els.queueMode.textContent = modeLabel();
+      };
+
+      const renderControls = () => {
+        document.querySelectorAll('.mode-button').forEach((button) => {
+          button.classList.toggle('is-active', button.dataset.mode === state.mode);
+        });
+        document.querySelectorAll('.category-button').forEach((button) => {
+          button.classList.toggle('is-active', button.dataset.category === state.category);
+        });
+        els.dayControl.hidden = state.mode !== 'path';
+        els.daySelect.value = String(state.day);
+      };
+
+      const renderCard = () => {
+        const card = currentCard();
+        const hasCard = Boolean(card);
+        els.wordCard.hidden = !hasCard;
+        els.emptyReview.hidden = hasCard;
+        document.querySelectorAll('.rating-button, #reveal-button, #next-button, #listen-button').forEach((button) => {
+          button.disabled = !hasCard;
+        });
+
+        if (!card) {
+          return;
+        }
+
+        const unavailable = store.audioUnavailable[card.id] || state.audioStatus[card.id] === 'unavailable';
+        const playing = state.audioStatus[card.id] === 'playing';
+        els.cardCategory.textContent = card.category;
+        els.cardCategory.dataset.category = card.category;
+        els.cardProgress.textContent = progressLabel(card);
+        els.cardDay.textContent = `Day ${card.dayGroup}`;
+        els.cardWord.textContent = card.word;
+        els.cardBack.hidden = !state.revealed;
+        els.cardFrontNote.hidden = state.revealed;
+        els.revealButton.textContent = state.revealed ? '已翻开' : '翻开';
+        els.cardMeaning.textContent = card.meaningZh;
+        els.cardExampleEn.textContent = card.exampleEn;
+        els.cardExampleZh.textContent = card.exampleZh;
+        els.cardVariants.textContent = card.variantSpelling ? `${card.word} / ${card.variantSpelling}` : '无';
+        els.pronunciationStatus.textContent = unavailable
+          ? `MP3 暂不可用${card.ipa ? ` · ${card.ipa}` : ''}`
+          : playing
+            ? '正在播放 MP3'
+            : card.ipa
+              ? `MP3 可播放 · ${card.ipa}`
+              : 'MP3 可播放';
+      };
+
+      const render = () => {
+        renderStats();
+        renderControls();
+        renderCard();
+      };
+
+      const revealCard = () => {
+        if (!currentCard()) return;
+        state.revealed = true;
+        render();
+      };
+
+      const nextCard = () => {
+        if (!currentCard()) {
+          resetSession();
+          render();
+          return;
+        }
+        state.index += 1;
+        state.revealed = false;
+        if (state.index >= state.sessionIds.length && state.mode === 'due') {
+          resetSession();
+        }
+        render();
+      };
+
+      const intervalFor = (rating, previous) => {
+        const oldInterval = previous?.interval ?? 0;
+        const ease = previous?.ease ?? 2.2;
+        if (rating === 'Again') return { interval: 0, ease: Math.max(1.6, ease - 0.18), reps: 0 };
+        if (rating === 'Hard') {
+          return {
+            interval: oldInterval > 0 ? Math.max(1, Math.round(oldInterval * 1.25)) : 1,
+            ease: Math.max(1.7, ease - 0.08),
+            reps: (previous?.reps ?? 0) + 1,
+          };
+        }
+        if (rating === 'Easy') {
+          return {
+            interval: oldInterval > 0 ? Math.max(7, Math.round(oldInterval * (ease + 0.35))) : 7,
+            ease: Math.min(2.6, ease + 0.05),
+            reps: (previous?.reps ?? 0) + 1,
+          };
+        }
+        return {
+          interval: oldInterval > 0 ? Math.max(3, Math.round(oldInterval * ease)) : 3,
+          ease,
+          reps: (previous?.reps ?? 0) + 1,
+        };
+      };
+
+      const playCompletionChime = () => {
+        if (!userInteracted) return;
+        const AudioContextClass = window.AudioContext || window['webkitAudioContext'];
+        if (!AudioContextClass) return;
+        audioContext ||= new AudioContextClass();
+        audioContext.resume?.();
+
+        const now = audioContext.currentTime;
+        [523.25, 659.25, 783.99].forEach((frequency, index) => {
+          const oscillator = audioContext.createOscillator();
+          const gain = audioContext.createGain();
+          oscillator.type = 'sine';
+          oscillator.frequency.setValueAtTime(frequency, now + index * 0.08);
+          gain.gain.setValueAtTime(0, now + index * 0.08);
+          gain.gain.linearRampToValueAtTime(0.12, now + index * 0.08 + 0.02);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + index * 0.08 + 0.34);
+          oscillator.connect(gain);
+          gain.connect(audioContext.destination);
+          oscillator.start(now + index * 0.08);
+          oscillator.stop(now + index * 0.08 + 0.36);
+        });
+      };
+
+      const rateCard = (rating) => {
+        const card = currentCard();
+        if (!card) return;
+        const dueBefore = totalDueCount();
+        const previous = progressFor(card);
+        const next = intervalFor(rating, previous);
+        const today = todayStamp();
+        store.cards[card.id] = {
+          due: addDays(today, next.interval),
+          interval: next.interval,
+          ease: next.ease,
+          reps: next.reps,
+          lapses: rating === 'Again' ? (previous?.lapses ?? 0) + 1 : (previous?.lapses ?? 0),
+          lastRating: rating,
+          lastReviewedAt: new Date().toISOString(),
+        };
+        saveStore();
+        if (rating === 'Again') {
+          state.sessionIds.push(card.id);
+        }
+        state.index += 1;
+        state.revealed = false;
+        if (state.index >= state.sessionIds.length && state.mode === 'due') {
+          resetSession();
+        }
+        render();
+        if (dueBefore > 0 && totalDueCount() === 0) {
+          playCompletionChime();
+        }
+      };
+
+      const markAudioUnavailable = (card) => {
+        state.audioStatus[card.id] = 'unavailable';
+        store.audioUnavailable[card.id] = true;
+        saveStore();
+        render();
+      };
+
+      const playPronunciation = () => {
+        const card = currentCard();
+        if (!card) return;
+        if (!card.audioUrl) {
+          markAudioUnavailable(card);
+          return;
+        }
+        try {
+          currentAudio?.pause();
+          const audio = new Audio(card.audioUrl);
+          currentAudio = audio;
+          audio.addEventListener('error', () => markAudioUnavailable(card), { once: true });
+          audio.addEventListener('ended', () => {
+            state.audioStatus[card.id] = 'ready';
+            render();
+          });
+          state.audioStatus[card.id] = 'playing';
+          render();
+          audio.play().catch(() => markAudioUnavailable(card));
+        } catch {
+          markAudioUnavailable(card);
+        }
+      };
+
+      const exportProgress = () => {
+        const blob = new Blob([JSON.stringify(store, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `basic-english-srs-${todayStamp()}.json`;
+        link.click();
+        URL.revokeObjectURL(url);
+      };
+
+      const resetProgress = () => {
+        if (!confirm('确定清空 Basic English 复习进度？')) return;
+        store = defaultStore();
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+        resetSession();
+        render();
+      };
+
+      document.addEventListener('pointerdown', noteInteraction, { once: true });
+      document.addEventListener('keydown', noteInteraction, { once: true });
+
+      document.querySelectorAll('.mode-button').forEach((button) => {
+        button.addEventListener('click', () => {
+          state.mode = button.dataset.mode;
+          resetSession();
+          render();
+        });
+      });
+
+      document.querySelectorAll('.category-button').forEach((button) => {
+        button.addEventListener('click', () => {
+          state.category = button.dataset.category;
+          resetSession();
+          render();
+        });
+      });
+
+      els.daySelect.addEventListener('change', () => {
+        state.day = Math.min(dayCount, Math.max(1, Number(els.daySelect.value) || 1));
+        resetSession();
+        render();
+      });
+
+      els.revealButton.addEventListener('click', revealCard);
+      els.nextButton.addEventListener('click', nextCard);
+      els.listenButton.addEventListener('click', playPronunciation);
+      document.querySelector('#export-progress').addEventListener('click', exportProgress);
+      document.querySelector('#reset-progress').addEventListener('click', resetProgress);
+
+      document.querySelectorAll('.rating-button').forEach((button) => {
+        button.addEventListener('click', () => rateCard(button.dataset.rating));
+      });
+
+      document.addEventListener('keydown', (event) => {
+        const tagName = event.target instanceof HTMLElement ? event.target.tagName : '';
+        if (['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON'].includes(tagName)) return;
+        if (event.code === 'Space') {
+          event.preventDefault();
+          if (state.revealed) nextCard();
+          else revealCard();
+        }
+        if (event.key === '1') rateCard('Again');
+        if (event.key === '2') rateCard('Hard');
+        if (event.key === '3') rateCard('Good');
+        if (event.key === '4') rateCard('Easy');
+        if (event.key.toLowerCase() === 'p') playPronunciation();
+      });
+
+      resetSession();
+      render();
+    })();
+  </script>
+
+  <style>
+    .basic-shell {
+      width: min(1180px, calc(100% - 36px));
+      margin-inline: auto;
+      padding: clamp(24px, 5vw, 52px) 0 76px;
+    }
+
+    :global(.konh-overlay) {
+      display: none;
+    }
+
+    .basic-shell [hidden] {
+      display: none !important;
+    }
+
+    .basic-hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(260px, 360px);
+      gap: clamp(22px, 5vw, 52px);
+      align-items: end;
+      margin-bottom: 22px;
+    }
+
+    .eyebrow,
+    .control-label,
+    .word-kicker {
+      color: #a8d8bd;
+      font-size: 0.78rem;
+      font-weight: 750;
+      text-transform: uppercase;
+    }
+
+    .basic-hero h1 {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.12em 0.34em;
+      margin: 10px 0 16px;
+      font-size: clamp(2.8rem, 8vw, 5.6rem);
+      line-height: 0.94;
+      letter-spacing: 0;
+    }
+
+    .basic-hero h1 span {
+      display: inline-block;
+    }
+
+    .basic-hero p {
+      max-width: 670px;
+      margin: 0;
+      color: var(--muted);
+      font-size: 1.05rem;
+      line-height: 1.76;
+    }
+
+    .hero-stats {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .hero-stats div {
+      min-width: 0;
+      border: 1px solid #383838;
+      border-radius: 8px;
+      padding: 12px;
+      background: #1d1d1d;
+      box-shadow: 0 16px 42px rgba(0, 0, 0, 0.2);
+    }
+
+    .hero-stats strong {
+      display: block;
+      color: #f2f2f2;
+      font-size: clamp(1.55rem, 4vw, 2.25rem);
+      line-height: 1;
+    }
+
+    .hero-stats span {
+      display: block;
+      margin-top: 7px;
+      color: var(--faint);
+      font-size: 0.78rem;
+      font-weight: 650;
+      line-height: 1.2;
+    }
+
+    .study-board {
+      display: grid;
+      grid-template-columns: minmax(248px, 292px) minmax(0, 1fr);
+      gap: 18px;
+      align-items: stretch;
+    }
+
+    .study-controls {
+      display: grid;
+      grid-template-rows: auto auto 1fr auto;
+      gap: 16px;
+      position: sticky;
+      top: 18px;
+      align-self: stretch;
+      border: 1px solid #343434;
+      border-radius: 8px;
+      padding: 16px;
+      background: #1d1d1d;
+    }
+
+    .control-block {
+      display: grid;
+      gap: 9px;
+    }
+
+    .segmented,
+    .category-filters,
+    .control-actions,
+    .card-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    button,
+    select {
+      border: 1px solid #3a3a3a;
+      border-radius: 7px;
+      background: #282828;
+      color: var(--ink);
+      cursor: pointer;
+    }
+
+    button:hover,
+    select:hover {
+      border-color: #5a5a5a;
+      background: #303030;
+    }
+
+    button:focus-visible,
+    select:focus-visible {
+      outline: 2px solid #f4c95d;
+      outline-offset: 2px;
+    }
+
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.45;
+    }
+
+    .mode-button,
+    .category-button,
+    .control-actions button {
+      min-height: 34px;
+      padding: 7px 10px;
+      color: #d7d7d7;
+      font-size: 0.82rem;
+      font-weight: 700;
+      line-height: 1;
+    }
+
+    .mode-button.is-active,
+    .category-button.is-active {
+      border-color: #f4c95d;
+      background: #312b1d;
+      color: #ffe6a3;
+    }
+
+    .category-button {
+      max-width: 100%;
+      overflow-wrap: anywhere;
+    }
+
+    select {
+      width: 100%;
+      min-height: 40px;
+      padding: 8px 10px;
+      color: #eeeeee;
+    }
+
+    .card-stage {
+      display: grid;
+      grid-template-rows: auto minmax(360px, 1fr) auto;
+      min-width: 0;
+    }
+
+    .queue-strip {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+      color: var(--faint);
+      font-size: 0.86rem;
+      font-weight: 700;
+    }
+
+    .word-card {
+      position: relative;
+      display: grid;
+      gap: clamp(18px, 4vw, 30px);
+      min-height: 360px;
+      border: 1px solid #3a3a3a;
+      border-radius: 8px;
+      padding: clamp(18px, 4vw, 34px);
+      background:
+        linear-gradient(135deg, rgba(168, 216, 189, 0.12), transparent 32%),
+        linear-gradient(315deg, rgba(244, 201, 93, 0.1), transparent 28%),
+        #202020;
+      box-shadow: 0 26px 60px rgba(0, 0, 0, 0.34);
+      overflow: hidden;
+    }
+
+    .word-card::after {
+      content: "";
+      position: absolute;
+      inset: auto 24px 22px auto;
+      width: 82px;
+      height: 82px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 50%;
+      background: repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.06) 4px, transparent 4px, transparent 10px);
+      opacity: 0.45;
+      pointer-events: none;
+    }
+
+    .card-topline,
+    .word-row {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+    }
+
+    .category-chip,
+    .progress-chip {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      border-radius: 999px;
+      padding: 5px 10px;
+      font-size: 0.74rem;
+      font-weight: 800;
+      line-height: 1;
+      max-width: 100%;
+      overflow-wrap: anywhere;
+    }
+
+    .category-chip {
+      background: #18392c;
+      color: #b9f3d2;
+    }
+
+    .category-chip[data-category="Things-General"] {
+      background: #3b2c17;
+      color: #ffd58a;
+    }
+
+    .category-chip[data-category="Things-Pictured"] {
+      background: #17313f;
+      color: #9edffe;
+    }
+
+    .category-chip[data-category="Qualities-General"] {
+      background: #3a2433;
+      color: #ffbddf;
+    }
+
+    .category-chip[data-category="Qualities-Opposite"] {
+      background: #2d3250;
+      color: #cbd5ff;
+    }
+
+    .progress-chip {
+      background: #2b2b2b;
+      color: #cfcfcf;
+    }
+
+    .word-row {
+      align-items: flex-start;
+    }
+
+    .word-row h2 {
+      max-width: min(100%, 720px);
+      margin: 8px 0 0;
+      color: #fbfbf7;
+      font-size: clamp(3.4rem, 10vw, 7rem);
+      line-height: 0.92;
+      letter-spacing: 0;
+      overflow-wrap: anywhere;
+    }
+
+    .listen-button {
+      flex: 0 0 auto;
+      display: grid;
+      place-items: center;
+      width: 54px;
+      height: 54px;
+      border-color: #f4c95d;
+      background: #f4c95d;
+      color: #171717;
+      font-weight: 900;
+      box-shadow: 0 12px 28px rgba(244, 201, 93, 0.2);
+    }
+
+    .card-back {
+      position: relative;
+      z-index: 1;
+      animation: cardReveal 180ms ease-out;
+    }
+
+    .card-back dl {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin: 0;
+    }
+
+    .card-back div {
+      min-width: 0;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 8px;
+      padding: 13px;
+      background: rgba(21, 21, 21, 0.62);
+    }
+
+    .card-back dt {
+      color: var(--faint);
+      font-size: 0.74rem;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+
+    .card-back dd {
+      margin: 7px 0 0;
+      color: #f0f0f0;
+      line-height: 1.5;
+      overflow-wrap: anywhere;
+    }
+
+    .card-back p {
+      margin: 0;
+    }
+
+    .card-back p + p {
+      margin-top: 6px;
+      color: #bdbdbd;
+    }
+
+    .card-front-note {
+      position: relative;
+      z-index: 1;
+      align-self: end;
+      color: #858585;
+      font-size: 0.92rem;
+      font-weight: 650;
+    }
+
+    .empty-review {
+      display: grid;
+      gap: 8px;
+      min-height: 360px;
+      place-content: center;
+      border: 1px solid #3a3a3a;
+      border-radius: 8px;
+      padding: 28px;
+      background: #202020;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    .empty-review strong {
+      color: var(--ink);
+      font-size: 1.4rem;
+    }
+
+    .card-actions {
+      margin-top: 14px;
+    }
+
+    .card-actions button {
+      min-height: 44px;
+      min-width: 86px;
+      padding: 10px 14px;
+      font-size: 0.9rem;
+      font-weight: 800;
+    }
+
+    .reveal-button,
+    .next-button {
+      border-color: #4b4b4b;
+      background: #2b2b2b;
+    }
+
+    .rating-button.again {
+      border-color: #e07a5f;
+      background: #38231e;
+      color: #ffb39f;
+    }
+
+    .rating-button.hard {
+      border-color: #f4a261;
+      background: #392a1d;
+      color: #ffc58d;
+    }
+
+    .rating-button.good {
+      border-color: #a8d8bd;
+      background: #18392c;
+      color: #b9f3d2;
+    }
+
+    .rating-button.easy {
+      border-color: #9edffe;
+      background: #17313f;
+      color: #c7edff;
+    }
+
+    @keyframes cardReveal {
+      from {
+        opacity: 0;
+        transform: translateY(8px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .card-back {
+        animation: none;
+      }
+    }
+
+    @media (max-width: 880px) {
+      .basic-hero,
+      .study-board {
+        grid-template-columns: 1fr;
+      }
+
+      .study-controls {
+        position: static;
+      }
+    }
+
+    @media (max-width: 620px) {
+      .basic-shell {
+        width: min(100% - 24px, 1180px);
+        padding-top: 26px;
+      }
+
+      .basic-hero {
+        gap: 16px;
+      }
+
+      .basic-hero h1 {
+        font-size: clamp(2.5rem, 14vw, 3.35rem);
+      }
+
+      .basic-hero p {
+        font-size: 0.96rem;
+      }
+
+      .hero-stats {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 6px;
+      }
+
+      .hero-stats div {
+        padding: 10px 8px;
+      }
+
+      .hero-stats strong {
+        font-size: 1.5rem;
+      }
+
+      .study-board {
+        display: flex;
+        flex-direction: column;
+      }
+
+      .card-stage {
+        order: 1;
+        display: block;
+        width: 100%;
+      }
+
+      .study-controls {
+        order: 2;
+        display: grid;
+        grid-template-rows: none;
+        width: 100%;
+      }
+
+      .word-card,
+      .empty-review {
+        min-height: 330px;
+      }
+
+      .word-row {
+        flex-direction: column;
+      }
+
+      .listen-button {
+        width: 48px;
+        height: 48px;
+      }
+
+      .card-back dl {
+        grid-template-columns: 1fr;
+      }
+
+      .card-actions button {
+        flex: 1 1 calc(50% - 8px);
+      }
+    }
+  </style>
+</BaseLayout>

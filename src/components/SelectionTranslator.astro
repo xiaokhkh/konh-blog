@@ -1,7 +1,6 @@
 <div class="selection-translator" id="selection-translator" hidden>
   <div class="selection-translator-actions">
     <span data-status>Translating...</span>
-    <button type="button" data-speak aria-label="Play selected text pronunciation">Listen</button>
     <button type="button" data-close aria-label="Close translation">x</button>
   </div>
   <div class="selection-translator-result" data-result></div>
@@ -12,7 +11,6 @@
   (() => {
     const panel = document.querySelector('#selection-translator');
     const status = panel?.querySelector('[data-status]');
-    const speakButton = panel?.querySelector('[data-speak]');
     const closeButton = panel?.querySelector('[data-close]');
     const result = panel?.querySelector('[data-result]');
     const fallback = panel?.querySelector('[data-fallback]');
@@ -21,7 +19,7 @@
     let translateController = null;
     let translateTimer = 0;
 
-    if (!panel || !status || !speakButton || !closeButton || !result || !fallback || !articleBody) return;
+    if (!panel || !status || !closeButton || !result || !fallback || !articleBody) return;
 
     const hidePanel = () => {
       if (translateController) translateController.abort();
@@ -31,10 +29,6 @@
       result.textContent = '';
       fallback.hidden = true;
       selectedText = '';
-    };
-
-    const updateSpeakState = () => {
-      speakButton.disabled = !('speechSynthesis' in window) || !selectedText;
     };
 
     const getArticleSelection = () => {
@@ -68,7 +62,6 @@
       status.textContent = 'Translating...';
       result.textContent = '';
       fallback.hidden = true;
-      updateSpeakState();
       window.clearTimeout(translateTimer);
       translateTimer = window.setTimeout(translate, 120);
     };
@@ -111,16 +104,6 @@
       }
     };
 
-    const speak = () => {
-      if (!selectedText || !('speechSynthesis' in window)) return;
-
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(selectedText);
-      utterance.lang = /[\u3400-\u9fff]/.test(selectedText) ? 'zh-CN' : 'en-US';
-      utterance.rate = 0.92;
-      window.speechSynthesis.speak(utterance);
-    };
-
     document.addEventListener('mouseup', () => window.setTimeout(showPanel, 0));
     document.addEventListener('keyup', (event) => {
       if (event.key === 'Escape') hidePanel();
@@ -130,8 +113,6 @@
       if (!window.getSelection()?.toString().trim() && !panel.matches(':hover')) hidePanel();
     });
     window.addEventListener('scroll', hidePanel, { passive: true });
-    speakButton.addEventListener('click', speak);
     closeButton.addEventListener('click', hidePanel);
-    updateSpeakState();
   })();
 </script>

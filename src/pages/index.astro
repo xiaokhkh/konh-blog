@@ -25,6 +25,14 @@ const websiteJsonLd = {
 >
   <div class="container home-shell">
     <section class="home-posts" aria-labelledby="latest-posts">
+      <a class="home-tool-entry" href="/basic-english/" aria-label="Open Basic English 850 SRS cards">
+        <span class="home-tool-mark">850</span>
+        <span>
+          <strong>Basic English cards</strong>
+          <em>用本地 SRS 复习 Ogden 850 个核心词</em>
+        </span>
+      </a>
+
       <div class="section-head">
         <h2 id="latest-posts">Latest essays</h2>
         <a href="/archive/">All posts</a>
@@ -42,4 +50,57 @@ const websiteJsonLd = {
       }
     </section>
   </div>
+
+  <style>
+    .home-tool-entry {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      gap: 12px;
+      align-items: center;
+      margin-bottom: 34px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      background: #1d1d1d;
+      color: var(--ink);
+      text-decoration: none;
+    }
+
+    .home-tool-entry:hover {
+      border-color: #505050;
+      background: #232323;
+    }
+
+    .home-tool-mark {
+      display: grid;
+      place-items: center;
+      width: 52px;
+      height: 52px;
+      border-radius: 7px;
+      background: #18392c;
+      color: #b9f3d2;
+      font-size: 1.15rem;
+      font-weight: 800;
+      line-height: 1;
+    }
+
+    .home-tool-entry strong,
+    .home-tool-entry em {
+      display: block;
+      overflow-wrap: anywhere;
+    }
+
+    .home-tool-entry strong {
+      font-size: 1rem;
+      line-height: 1.25;
+    }
+
+    .home-tool-entry em {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 0.86rem;
+      font-style: normal;
+      line-height: 1.5;
+    }
+  </style>
 </BaseLayout>
