@@ -1,0 +1,252 @@
+---
+title: Kimi Code 源码精读：一个 AI Coding Agent CLI 是如何跑起来的
+description: 精读 MoonshotAI 开源的 Kimi Code：从 CLI/TUI、SDK、Session、Agent
+  loop、工具执行、权限、上下文恢复到 provider 抽象，拆解一个 AI Coding Agent Runtime 的工程结构。
+pubDate: 2026-06-05
+tags:
+  - ai
+  - agents
+  - coding-agent
+  - source-reading
+  - architecture
+cover: /images/covers/kimi-code-source-reading-cover.png
+coverAlt: 抽象软件架构面板连接到开发者终端的深色技术封面
+---
+
+最近读了一遍 MoonshotAI 开源的 [Kimi Code](https://github.com/MoonshotAI/kimi-code) 源码。它表面上是一个终端里的 AI 编程助手，但源码里真正值得看的，不是“把聊天模型接到 shell 上”这么简单，而是一套完整的 Coding Agent Runtime：CLI/TUI、SDK、Session、Agent、工具执行、权限、上下文、持久化、模型 provider、子 Agent、MCP 和 ACP 都有明确边界。
+
+本文基于 commit `b64f3b4bca4c987e08bdf34f237bc7cac8d0fc46` 精读。
+
+## 一句话结论
+
+Kimi Code 的核心不是一个 CLI，而是一个可以被 CLI、TUI、IDE 或其他宿主复用的 Agent 运行时。
+
+它的分层大致是：
+
+```text
+apps/kimi-code        CLI + TUI 产品壳
+packages/node-sdk     面向宿主的 SDK/RPC 包装
+packages/agent-core   Session、Agent、工具、权限、上下文、持久化核心
+packages/kosong       多模型 provider 抽象
+packages/kaos         shell/fs 抽象
+packages/acp-adapter  IDE/ACP 接入
+```
+
+这个结构的好处很直接：用户界面可以变化，IDE 接入可以变化，模型供应商也可以变化，但核心 Agent loop、工具协议、上下文和恢复机制保持稳定。
+
+## 从入口看产品形态
+
+CLI 入口在 `apps/kimi-code/src/main.ts`。主命令先做参数校验、更新检查，再根据是否传入 `--prompt` 决定进入无 UI prompt 模式还是 TUI 交互模式。
+
+交互模式走 `run-shell.ts`，它会加载 TUI 配置、解析主题、构造 `KimiHarness`，然后启动 `KimiTUI`。无 UI 模式走 `run-prompt.ts`，适合脚本化调用；这里会创建或恢复 session，执行一次 prompt，并把结果以 text 或 stream-json 输出。
+
+这意味着 Kimi Code 从一开始就不是只面向人工终端交互。它同时支持：
+
+- 人用的 TUI。
+- 脚本用的 one-shot prompt。
+- SDK 宿主调用。
+- ACP/IDE 集成。
+
+## SDK 是边界，不是业务核心
+
+`packages/node-sdk` 这一层很薄，但很关键。`SDKRpcClient` 会创建 in-process RPC，把 SDK 调用转发给 `KimiCore`。`KimiHarness` 再提供更顺手的 session 创建、恢复和配置读取接口。
+
+典型调用链是：
+
+```text
+KimiTUI
+ -> KimiHarness.createSession()
+ -> SDKRpcClient
+ -> KimiCore.createSession()
+ -> agent-core Session
+```
+
+这里的设计重点是隔离。CLI/TUI 不直接 new core 内部对象，而是通过 SDK/RPC 边界访问。这样 ACP adapter、测试、其他宿主都能复用同一套核心能力。
+
+## Session 是运行时的容器
+
+真正的会话创建在 `packages/agent-core/src/rpc/core-impl.ts`。`KimiCore.createSession()` 会做几件事：
+
+- 解析工作目录、模型、thinking、permission mode。
+- 合并 MCP 配置和插件配置。
+- 创建 session 存储目录。
+- 构造 `Session`。
+- 创建 main agent。
+- 写入 session metadata。
+
+`Session` 本身是一个运行时容器。它持有技能注册表、MCP 连接、hook 引擎、goal store、metadata、日志 sink 和 agent 集合。main agent、subagent、independent agent 都从这里创建。
+
+这层的边界很重要：Session 负责生命周期和外部资源，Agent 负责推理、工具和上下文。
+
+## Agent 是组合根
+
+`packages/agent-core/src/agent/index.ts` 里的 `Agent` 是核心组合根。它把这些东西接在一起：
+
+- records：持久化和 replay。
+- context：模型可见消息。
+- config：模型、thinking、权限等运行时配置。
+- turn flow：一次或多次推理循环。
+- tools：内建工具、用户工具、MCP 工具。
+- permission：工具调用审批。
+- compaction：上下文压缩。
+- plan mode：计划模式控制。
+- background tasks：后台任务。
+- skills：技能发现和激活。
+
+换句话说，Agent 本身不是一个“调用模型的函数”，而是一个有状态运行体。模型调用只是它的一个能力。
+
+## 真正的模型循环是 stateless loop
+
+Kimi Code 一个很好的设计点是把 loop 做成相对无状态的模块。
+
+`packages/agent-core/src/loop/run-turn.ts` 负责多 step 循环，`turn-step.ts` 负责单次 provider 调用和工具调用分派。它们不拥有 session、不直接处理 UI、不管理持久化，也不关心 TUI 怎么显示。外层的 `TurnFlow` 把 context、hooks、permission、compaction 接进来。
+
+一次普通 prompt 的路径大概是：
+
+```text
+用户输入
+ -> KimiTUI.sendMessageInternal()
+ -> node-sdk Session.prompt()
+ -> KimiCore.prompt()
+ -> SessionAPIImpl.prompt()
+ -> Agent.turn.prompt()
+ -> TurnFlow.runOneTurn()
+ -> loop.runTurn()
+ -> KosongLLM.chat()
+ -> tool-call batch 如果模型调用工具
+ -> ContextMemory + SDK events
+ -> TUI SessionEventHandler/StreamingUI
+```
+
+这个拆法让 core loop 的职责非常干净：拿消息、调模型、解释 stop reason、执行工具、决定是否继续下一 step。
+
+## 工具调用链路做得比较完整
+
+工具执行在 `packages/agent-core/src/loop/tool-call.ts`。模型返回 tool call 后，系统不会立刻执行，而是经过一条完整流水线：
+
+```text
+解析 provider tool call
+ -> JSON/schema 校验
+ -> 查找工具
+ -> prepare hook
+ -> 重新校验参数
+ -> resolveExecution
+ -> permission approval
+ -> emit tool.call
+ -> ToolScheduler 调度执行
+ -> finalize hook
+ -> emit tool.result
+ -> 写入 ContextMemory
+```
+
+`ToolScheduler` 也不是简单并发。它会根据工具声明的资源访问集合判断冲突：不冲突的工具可以并发执行，冲突的工具排队；但最终 tool result 仍按 provider 返回顺序写回，保证 transcript 稳定。
+
+内建工具集中在 `agent/tool/index.ts`，包括 `Read`、`Write`、`Edit`、`Grep`、`Glob`、`Bash`、`TodoList`、`Agent`、`WebSearch`、`FetchURL`、MCP 工具等。MCP 工具会被包装成 `mcp__server__tool` 这种命名形式，进入同一套工具协议。
+
+## 权限系统是策略链
+
+权限不是散落在各个工具里，而是在 `agent/permission` 下统一处理。策略顺序非常关键，先匹配先返回。
+
+策略链里能看到这些层次：
+
+- hook 可以提前 deny。
+- auto 模式下禁止 `AskUserQuestion`。
+- plan mode 下限制实际修改类工具。
+- 用户配置的 allow/deny/ask rules。
+- session 内已批准的规则。
+- 敏感文件、git 控制路径、cwd 外写入等特殊保护。
+- yolo 模式放行。
+- 只读工具默认放行。
+- 兜底 ask。
+
+这套机制的优点是行为可解释，缺点是新增策略时必须非常谨慎。顺序一变，安全语义就可能变化。
+
+## 上下文和持久化是恢复能力的根
+
+`ContextMemory` 根据 loop event 维护模型可见消息。它会处理 assistant message、tool call、tool result、deferred message 和 compaction 后的摘要替换。
+
+持久化则使用 append-only JSONL records。`records/index.ts` 里有一个非常重要的约束：replay 时不能发 UI 事件、不能调用 LLM、不能执行工具、不能产生文件系统副作用。
+
+这说明 Kimi Code 的恢复不是“把内存对象序列化再读回来”，而是通过事件记录重建 Agent 状态。这个方向更适合长期会话、版本迁移和故障恢复。
+
+## Provider 抽象放在 kosong
+
+模型供应商适配放在 `packages/kosong`。上层通过统一的 `ChatProvider` 接口调用 provider，底层可以是 Kimi、OpenAI、Anthropic、Google、Vertex 或 OpenAI Responses。
+
+流式生成时，`kosong.generate()` 会把 text、thinking、tool-call delta 归并成统一 assistant message。`KosongLLM` 再把这些事件映射回 agent loop 的 callback。
+
+这让 agent-core 不需要把每个模型 API 的流式细节散落到业务代码里。
+
+## 子 Agent 不是噱头
+
+默认 profile 里内置了 `coder`、`explore`、`plan` 子 agent。`Agent` 工具可以启动或恢复子 agent；`subagent-host.ts` 负责创建 child agent、继承父 agent 的 cwd/model/thinking、触发 hook、执行 prompt，并把 summary 返回父 agent。
+
+这里有两个细节值得注意：
+
+- `explore` 和 `plan` profile 是偏只读的，适合探索和规划。
+- 子 agent 事件会被 TUI 折叠进父级 Agent 工具卡片，而不是把所有子事件直接刷到主 transcript。
+
+这说明它不是简单的“递归调用自己”，而是有 UI、权限、上下文和生命周期约束的子任务系统。
+
+## ACP 让它能接 IDE
+
+`packages/acp-adapter` 提供 Agent Client Protocol 接入。ACP server 会暴露 session 创建、恢复、prompt、cancel、model/mode 设置等能力。`AcpKaos` 则把文件读写接到宿主提供的 `readTextFile/writeTextFile` 上。
+
+这个点很实用：在 IDE 场景里，文件内容不一定应该直接从磁盘读，可能要读编辑器 buffer。Kimi Code 把文件系统能力抽象成 Kaos，再由 ACP adapter 替换实现，这个边界比较干净。
+
+## 我看到的优点
+
+第一，架构边界清楚。CLI、SDK、core、loop、provider、tool execution 没有混成一团。
+
+第二，loop 近似无状态。它只负责模型和工具循环，session、UI、持久化、权限都由外层注入。
+
+第三，恢复机制严肃。append-only records 加 deterministic replay，比简单保存内存快照更可靠。
+
+第四，工具执行考虑了并发和 transcript 顺序。可以并发跑不冲突工具，但写回顺序稳定。
+
+第五，权限链条集中。虽然复杂，但至少集中在一个地方推理。
+
+第六，provider 抽象比较完整。同一套 agent loop 可以跑在多种模型 API 上。
+
+## 我看到的风险点
+
+第一，路径安全有明确 tradeoff。`path-access.ts` 里写明路径保护只做 lexical canonicalization，不跟随 symlink；如果 workspace 里存在指向外部的 symlink，这一层不能防止通过 symlink 访问外部路径。
+
+第二，TUI 协调类偏大。`KimiTUI`、`SessionEventHandler`、`StreamingUIController` 承担了大量状态同步和事件折叠逻辑，后续扩展时容易出现 UI 状态边界问题。
+
+第三，ACP adapter 有一些 SDK passthrough 的脆弱点。比如 MCP server 参数转发处依赖 SDK 继续透传未知字段，这类隐式契约需要测试兜住。
+
+第四，hook 错误倾向于不阻塞主流程。这有利于可用性，但如果用户依赖 hook 做自动化管控，就需要关注日志，否则 misconfiguration 可能被吞掉。
+
+第五，权限策略顺序很敏感。新增 policy 时如果没有覆盖 auto/yolo/plan/manual 的组合测试，容易引入意料之外的放行或拦截。
+
+## 推荐阅读顺序
+
+如果你想自己读这套代码，我建议按这个顺序：
+
+1. 先读 `apps/kimi-code/src/main.ts`、`cli/run-shell.ts`、`tui/kimi-tui.ts`，搞清产品入口。
+2. 再读 `packages/node-sdk/src/sdk-rpc-client.ts`、`kimi-harness.ts`、`session.ts`，理解宿主边界。
+3. 接着读 `packages/agent-core/src/rpc/core-impl.ts`、`session/index.ts`、`agent/index.ts`，建立核心对象图。
+4. 然后读 `agent/turn/index.ts`、`loop/run-turn.ts`、`loop/turn-step.ts`、`loop/tool-call.ts`、`loop/tool-scheduler.ts`，这是最关键的 Agent loop。
+5. 再读 `agent/tool/index.ts`、`tools/builtin/*`、`agent/permission/*`，看工具和安全控制。
+6. 之后读 `agent/context`、`agent/records`，理解上下文和恢复。
+7. 最后读 `profile/default/*.yaml`、`session/subagent-host.ts`、`packages/kosong`、`packages/acp-adapter`。
+
+## 结尾
+
+Kimi Code 的源码值得看，是因为它展示了一个现实可用的 AI Coding Agent 应该怎么拆：不是把 prompt、shell、文件编辑塞进一个大循环，而是把交互壳、运行时、模型 provider、工具系统、权限系统、上下文和恢复机制分开。
+
+如果只看功能，它是一个终端编程助手；如果看架构，它更像一个可嵌入的 Agent Runtime。
+
+对于想做 AI Coding Agent、IDE Agent 或内部自动化 Agent 的团队，这个仓库很适合作为工程参考。尤其是 stateless loop、append-only records、provider abstraction 和 tool scheduler 这几块，值得单独拆出来研究。
+
+## 源码索引
+
+- 仓库：https://github.com/MoonshotAI/kimi-code
+- 入口：https://github.com/MoonshotAI/kimi-code/blob/b64f3b4bca4c987e08bdf34f237bc7cac8d0fc46/apps/kimi-code/src/main.ts
+- TUI：https://github.com/MoonshotAI/kimi-code/blob/b64f3b4bca4c987e08bdf34f237bc7cac8d0fc46/apps/kimi-code/src/tui/kimi-tui.ts
+- SDK：https://github.com/MoonshotAI/kimi-code/tree/b64f3b4bca4c987e08bdf34f237bc7cac8d0fc46/packages/node-sdk/src
+- Core：https://github.com/MoonshotAI/kimi-code/tree/b64f3b4bca4c987e08bdf34f237bc7cac8d0fc46/packages/agent-core/src
+- Loop：https://github.com/MoonshotAI/kimi-code/tree/b64f3b4bca4c987e08bdf34f237bc7cac8d0fc46/packages/agent-core/src/loop
+- Provider：https://github.com/MoonshotAI/kimi-code/tree/b64f3b4bca4c987e08bdf34f237bc7cac8d0fc46/packages/kosong/src
+- ACP adapter：https://github.com/MoonshotAI/kimi-code/tree/b64f3b4bca4c987e08bdf34f237bc7cac8d0fc46/packages/acp-adapter/src
