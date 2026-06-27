@@ -1,0 +1,367 @@
+---
+title: React Native Filament SPZ 架构：从渲染底座到可漫游场景
+description: 一套把 SPZ/Gaussian Splat 渲染、移动端碰撞生成和未来 FPS 漫游能力拆开的 React Native Filament 架构说明。
+pubDate: 2026-06-27
+tags:
+  - react-native
+  - filament
+  - spz
+  - 3d
+  - architecture
+---
+
+SPZ 不是一种可以直接塞进 `<Model />` 的普通 3D 模型文件。它代表的是另一套渲染范式：3D Gaussian Splatting。
+
+这篇记录的是我现在在 `react-native-filament` 上做 SPZ 支持时采用的架构拆法：底层让 React Native Filament 真正具备 native SPZ/Gaussian Splat 渲染能力；上层再用一个独立包承接碰撞生成、角色移动、FPS 漫游和场景工具。
+
+最短的结论是：
+
+```text
+App / Demo / Product Scene
+  -> react-native-filament-spz
+  -> react-native-filament fork
+  -> Filament native GPU backend
+```
+
+`react-native-filament` fork 只承载渲染底座。`react-native-filament-spz` 承接 SPZ 相关的上层产品能力。
+
+## 为什么不是 SPZ 转 GLB
+
+“SPZ 转 GLB”听起来像格式转换，但实际跨的是渲染范式。
+
+`<Model />` 路径加载的是传统 glTF/GLB mesh：三角形、材质、贴图、UV、法线。SPZ 存的是 Gaussian Splats：位置、尺度、旋转、透明度、颜色或球谐信息。它没有天然的三角面，也没有 mesh renderer 能直接理解的表面拓扑。
+
+所以这里有两个容易混淆的方向：
+
+- 如果把 SPZ 重建成普通 mesh GLB，需要做网格重建、UV、法线和贴图烘焙。这是有损过程，复杂半透明、细碎结构、毛发感、树叶、反光都会退化。
+- 如果把 splat 数据装进带 Gaussian Splatting 扩展的 GLB，runtime 仍然必须实现 splat 投影、排序、alpha blending 和着色。GLB 只是容器，不是渲染能力。
+
+这也是为什么我没有把这件事理解成“喂给 `<Model />` 一个新文件格式”，而是把它当成一条新的 renderable 管线。
+
+<figure>
+  <svg viewBox="0 0 920 300" role="img" aria-label="GLB mesh 与 SPZ splat 渲染路线对比">
+    <defs>
+      <marker id="arrow-a" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+        <path d="M0,0 L0,6 L9,3 z" fill="#6b7280" />
+      </marker>
+    </defs>
+    <rect x="30" y="35" width="390" height="220" rx="10" fill="#f8fafc" stroke="#d5dbe3" />
+    <text x="55" y="75" font-size="22" font-weight="700" fill="#111827">普通 GLB / Mesh</text>
+    <text x="55" y="112" font-size="15" fill="#374151">triangle / normal / UV / material / texture</text>
+    <rect x="70" y="150" width="110" height="60" rx="8" fill="#ffffff" stroke="#cbd5e1" />
+    <text x="92" y="186" font-size="15" fill="#111827">glTF loader</text>
+    <line x1="180" y1="180" x2="245" y2="180" stroke="#6b7280" stroke-width="2" marker-end="url(#arrow-a)" />
+    <rect x="250" y="150" width="115" height="60" rx="8" fill="#ffffff" stroke="#cbd5e1" />
+    <text x="280" y="186" font-size="15" fill="#111827">Model</text>
+
+    <rect x="500" y="35" width="390" height="220" rx="10" fill="#f0fdfa" stroke="#99d8cf" />
+    <text x="525" y="75" font-size="22" font-weight="700" fill="#111827">SPZ / Gaussian Splat</text>
+    <text x="525" y="112" font-size="15" fill="#374151">position / scale / rotation / opacity / SH color</text>
+    <rect x="540" y="150" width="110" height="60" rx="8" fill="#ffffff" stroke="#99d8cf" />
+    <text x="568" y="186" font-size="15" fill="#111827">SPZ decode</text>
+    <line x1="650" y1="180" x2="715" y2="180" stroke="#6b7280" stroke-width="2" marker-end="url(#arrow-a)" />
+    <rect x="720" y="150" width="125" height="60" rx="8" fill="#ffffff" stroke="#99d8cf" />
+    <text x="742" y="177" font-size="15" fill="#111827">Splat renderer</text>
+    <text x="755" y="198" font-size="13" fill="#6b7280">不是 Model</text>
+  </svg>
+  <figcaption>SPZ 不是 mesh 的另一个扩展名，而是另一套绘制逻辑。</figcaption>
+</figure>
+
+## 总体分层
+
+我把这套能力拆成四层。
+
+<figure>
+  <svg viewBox="0 0 980 460" role="img" aria-label="React Native Filament SPZ 分层架构">
+    <defs>
+      <marker id="arrow-b" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+        <path d="M0,0 L0,6 L9,3 z" fill="#6b7280" />
+      </marker>
+    </defs>
+    <rect x="70" y="25" width="840" height="70" rx="9" fill="#ffffff" stroke="#d9dee6" />
+    <text x="100" y="58" font-size="21" font-weight="700" fill="#111827">App / Demo / Product Scene</text>
+    <text x="100" y="80" font-size="14" fill="#4b5563">资产加载、相机控制、角色移动、展示模式、产品业务逻辑</text>
+
+    <rect x="70" y="130" width="395" height="100" rx="9" fill="#f1f8ed" stroke="#9fc58c" />
+    <text x="100" y="166" font-size="20" font-weight="700" fill="#111827">react-native-filament-spz</text>
+    <text x="100" y="193" font-size="14" fill="#374151">collision CLI、segment resolver、未来 FPS API</text>
+    <text x="100" y="213" font-size="13" fill="#6b7280">变化快，业务味更重，适合独立迭代</text>
+
+    <rect x="515" y="130" width="395" height="100" rx="9" fill="#eef6f7" stroke="#8bc5c9" />
+    <text x="545" y="166" font-size="20" font-weight="700" fill="#111827">react-native-filament fork</text>
+    <text x="545" y="193" font-size="14" fill="#374151">useGaussianSplat、GaussianSplat、native loadSpz</text>
+    <text x="545" y="213" font-size="13" fill="#6b7280">稳定底座，面向 RNF 社区贡献</text>
+
+    <rect x="70" y="270" width="840" height="70" rx="9" fill="#fff8e7" stroke="#d9b767" />
+    <text x="100" y="303" font-size="21" font-weight="700" fill="#111827">C++ / Filament Resource Layer</text>
+    <text x="100" y="325" font-size="14" fill="#4b5563">SPZ decode、GPU buffers、material、renderable entity、bounds、sorting hooks</text>
+
+    <rect x="70" y="380" width="840" height="55" rx="9" fill="#f7f2f0" stroke="#d8afa7" />
+    <text x="100" y="413" font-size="21" font-weight="700" fill="#111827">Filament GPU Backend</text>
+    <text x="370" y="413" font-size="14" fill="#4b5563">Metal / OpenGL / Vulkan 后端实际绘制 splat billboard</text>
+
+    <line x1="490" y1="95" x2="270" y2="126" stroke="#6b7280" stroke-width="2" marker-end="url(#arrow-b)" />
+    <line x1="490" y1="95" x2="710" y2="126" stroke="#6b7280" stroke-width="2" marker-end="url(#arrow-b)" />
+    <line x1="465" y1="180" x2="511" y2="180" stroke="#6b7280" stroke-width="2" marker-end="url(#arrow-b)" />
+    <line x1="712" y1="230" x2="712" y2="266" stroke="#6b7280" stroke-width="2" marker-end="url(#arrow-b)" />
+    <line x1="490" y1="340" x2="490" y2="376" stroke="#6b7280" stroke-width="2" marker-end="url(#arrow-b)" />
+  </svg>
+  <figcaption>RNF fork 负责渲染底座，上层包负责场景工具和碰撞能力。</figcaption>
+</figure>
+
+这四层的边界很重要：
+
+| 层级 | 负责什么 | 不负责什么 |
+| --- | --- | --- |
+| App / Demo | 场景组合、相机控制、交互、样例资产 | 不承载 SPZ 解码 |
+| `react-native-filament-spz` | 碰撞生成、resolver、未来 FPS/角色 API | 不直接写 native renderer |
+| `react-native-filament` fork | native SPZ renderer、TS API、material | 不绑定某个业务场景 |
+| Filament | GPU 抽象、buffer、material、renderable | 不自动理解 SPZ 文件 |
+
+这个边界决定了后续社区贡献的可接受程度。RNF 维护者更容易评审一个通用 renderer，而不是一个夹带私有场景、FPS 控制、碰撞生成、debug overlay 的大功能包。
+
+## Native 渲染链路
+
+底层真正做渲染的是 native 链路。数据从 SPZ bytes 进入，经过 decoder，变成 decoded splat cloud，再构建 Filament 的 GPU buffer 和 renderable entity。
+
+<figure>
+  <svg viewBox="0 0 980 350" role="img" aria-label="SPZ native 渲染数据流">
+    <defs>
+      <marker id="arrow-c" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+        <path d="M0,0 L0,6 L9,3 z" fill="#6b7280" />
+      </marker>
+    </defs>
+    <rect x="40" y="75" width="145" height="80" rx="8" fill="#fff" stroke="#d9dee6" />
+    <text x="68" y="110" font-size="17" font-weight="700" fill="#111827">SPZ bytes</text>
+    <text x="62" y="134" font-size="13" fill="#6b7280">bundle / file / URL</text>
+
+    <rect x="235" y="75" width="165" height="80" rx="8" fill="#eef6f7" stroke="#8bc5c9" />
+    <text x="260" y="110" font-size="17" font-weight="700" fill="#111827">RNFSpzDecoder</text>
+    <text x="258" y="134" font-size="13" fill="#6b7280">解析 splat attributes</text>
+
+    <rect x="450" y="75" width="160" height="80" rx="8" fill="#f1f8ed" stroke="#9fc58c" />
+    <text x="475" y="110" font-size="17" font-weight="700" fill="#111827">Decoded Cloud</text>
+    <text x="470" y="134" font-size="13" fill="#6b7280">transform / downsample</text>
+
+    <rect x="660" y="75" width="160" height="80" rx="8" fill="#fff8e7" stroke="#d9b767" />
+    <text x="685" y="110" font-size="17" font-weight="700" fill="#111827">GPU buffers</text>
+    <text x="680" y="134" font-size="13" fill="#6b7280">VertexBuffer / material</text>
+
+    <rect x="870" y="75" width="90" height="80" rx="8" fill="#f7f2f0" stroke="#d8afa7" />
+    <text x="893" y="110" font-size="17" font-weight="700" fill="#111827">Scene</text>
+    <text x="886" y="134" font-size="13" fill="#6b7280">entity</text>
+
+    <line x1="185" y1="115" x2="231" y2="115" stroke="#6b7280" stroke-width="2" marker-end="url(#arrow-c)" />
+    <line x1="400" y1="115" x2="446" y2="115" stroke="#6b7280" stroke-width="2" marker-end="url(#arrow-c)" />
+    <line x1="610" y1="115" x2="656" y2="115" stroke="#6b7280" stroke-width="2" marker-end="url(#arrow-c)" />
+    <line x1="820" y1="115" x2="866" y2="115" stroke="#6b7280" stroke-width="2" marker-end="url(#arrow-c)" />
+
+    <rect x="190" y="225" width="600" height="70" rx="8" fill="#ffffff" stroke="#d9dee6" />
+    <text x="220" y="256" font-size="17" font-weight="700" fill="#111827">GaussianSplatWrapper 暴露给 JS</text>
+    <text x="220" y="280" font-size="13" fill="#6b7280">
+      getEntity / getBoundingBox / setCameraView / setRenderSize / sortByView / pointCount
+    </text>
+
+    <line x1="740" y1="155" x2="740" y2="221" stroke="#6b7280" stroke-width="2" marker-end="url(#arrow-c)" />
+  </svg>
+  <figcaption>JS 看到的是一个资源对象；复杂的 SPZ decode 和 GPU buffer 构建都留在 native 层。</figcaption>
+</figure>
+
+关键文件大致是：
+
+```text
+package/cpp/core/RNFSpzDecoder.cpp
+package/cpp/core/RNFGaussianSplatWrapper.cpp
+package/cpp/core/RNFEngineImpl.cpp
+package/cpp/core/RNFEngineWrapper.cpp
+package/src/hooks/useGaussianSplat.ts
+package/src/react/GaussianSplat.tsx
+package/src/types/GaussianSplat.ts
+```
+
+`RNFSpzDecoder` 负责把 SPZ 文件里的 splat 数据读出来。`GaussianSplatResource` 负责把这些数据变成 Filament renderable。`EngineImpl.loadSpz` 是 JS/TS 调 native 的入口。`GaussianSplatWrapper` 把 native resource 暴露成 JS 可操作的对象。
+
+## React Native API
+
+React 侧有两个入口。
+
+一个是 hook：
+
+```tsx
+const splat = useGaussianSplat(source, {
+  addToScene: true,
+  maxSplats,
+  splatScale: 1,
+  metricScaleFactor,
+  groundPlaneOffset,
+  flipY,
+})
+```
+
+另一个是组件：
+
+```tsx
+<GaussianSplat source={require('./scene.spz')} />
+```
+
+`useGaussianSplat` 内部做几件事：
+
+1. 通过 `useBuffer` 读取 `.spz`。
+2. 读取默认 splat material。
+3. 调 native `engine.loadSpz(...)`。
+4. 拿到 native `GaussianSplatAsset`。
+5. 把 entity 加进 Filament scene。
+6. 返回 bounding box、root entity、point count 等信息。
+
+所以在 React 侧，它应该像 RNF 里其他资源 hook 一样使用。真正复杂的 splat 解码、排序和 GPU buffer 构建都在 native 层。
+
+## 为什么上层包是必要的
+
+`react-native-filament-spz` 不是为了再包一层 renderer。它的价值是把“SPZ 变成可产品化场景”的能力放在 RNF core 外面。
+
+<figure>
+  <svg viewBox="0 0 940 330" role="img" aria-label="RNF core 与上层 SPZ 包边界">
+    <defs>
+      <marker id="arrow-d" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+        <path d="M0,0 L0,6 L9,3 z" fill="#6b7280" />
+      </marker>
+    </defs>
+    <rect x="50" y="45" width="380" height="220" rx="10" fill="#eef6f7" stroke="#8bc5c9" />
+    <text x="82" y="85" font-size="21" font-weight="700" fill="#111827">react-native-filament</text>
+    <text x="82" y="115" font-size="14" fill="#4b5563">稳定、通用、可被 RNF 社区接受</text>
+    <text x="95" y="155" font-size="14" fill="#111827">• SPZ decode</text>
+    <text x="95" y="183" font-size="14" fill="#111827">• Gaussian splat GPU buffer</text>
+    <text x="95" y="211" font-size="14" fill="#111827">• useGaussianSplat / GaussianSplat</text>
+    <text x="95" y="239" font-size="14" fill="#111827">• bounds / entity / sorting hooks</text>
+
+    <rect x="510" y="45" width="380" height="220" rx="10" fill="#f1f8ed" stroke="#9fc58c" />
+    <text x="542" y="85" font-size="21" font-weight="700" fill="#111827">react-native-filament-spz</text>
+    <text x="542" y="115" font-size="14" fill="#4b5563">变化更快，承接场景能力</text>
+    <text x="555" y="155" font-size="14" fill="#111827">• collision generation CLI</text>
+    <text x="555" y="183" font-size="14" fill="#111827">• mobile segment resolver</text>
+    <text x="555" y="211" font-size="14" fill="#111827">• future FPS controller</text>
+    <text x="555" y="239" font-size="14" fill="#111827">• sample scene helpers</text>
+
+    <line x1="510" y1="155" x2="434" y2="155" stroke="#6b7280" stroke-width="2" marker-end="url(#arrow-d)" />
+    <text x="470" y="300" font-size="14" fill="#6b7280" text-anchor="middle">
+      上层包依赖 RNF renderer；RNF core 不依赖上层工具
+    </text>
+  </svg>
+  <figcaption>上层包可以快速迭代，RNF core 应该尽量稳定和通用。</figcaption>
+</figure>
+
+这一层可以承接：
+
+- collision segment resolver；
+- `splat-transform` 产物到移动端 collision TS 的 CLI；
+- 未来 FPS controller；
+- 角色控制；
+- 场景漫游 API；
+- 社区 demo 辅助工具。
+
+这样拆的好处是：未来给社区提 PR 时，RNF 维护者可以先评审“native splat renderer”这一件核心能力；上层交互、碰撞、FPS 场景 API 可以作为独立包慢慢演进。
+
+## 碰撞生成链路
+
+SPZ 本身不是几何网格，所以不能天然提供角色碰撞。当前的移动端碰撞路线是：从外部生成 collision mesh/report，再压缩成角色控制足够用的 2D 线段碰撞。
+
+<figure>
+  <svg viewBox="0 0 980 360" role="img" aria-label="SPZ 碰撞生成链路">
+    <defs>
+      <marker id="arrow-e" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+        <path d="M0,0 L0,6 L9,3 z" fill="#6b7280" />
+      </marker>
+    </defs>
+    <rect x="50" y="60" width="150" height="80" rx="8" fill="#fff" stroke="#d9dee6" />
+    <text x="86" y="94" font-size="17" font-weight="700" fill="#111827">SPZ scene</text>
+    <text x="72" y="120" font-size="13" fill="#6b7280">视觉资产，不是碰撞体</text>
+
+    <rect x="250" y="60" width="180" height="80" rx="8" fill="#fff8e7" stroke="#d9b767" />
+    <text x="285" y="94" font-size="17" font-weight="700" fill="#111827">splat-transform</text>
+    <text x="275" y="120" font-size="13" fill="#6b7280">collision.glb + report</text>
+
+    <rect x="480" y="60" width="210" height="80" rx="8" fill="#f1f8ed" stroke="#9fc58c" />
+    <text x="512" y="94" font-size="17" font-weight="700" fill="#111827">mobile collision CLI</text>
+    <text x="512" y="120" font-size="13" fill="#6b7280">提取墙体线段，剔除地面</text>
+
+    <rect x="740" y="60" width="170" height="80" rx="8" fill="#eef6f7" stroke="#8bc5c9" />
+    <text x="780" y="94" font-size="17" font-weight="700" fill="#111827">TS segments</text>
+    <text x="770" y="120" font-size="13" fill="#6b7280">移动端轻量碰撞数据</text>
+
+    <line x1="200" y1="100" x2="246" y2="100" stroke="#6b7280" stroke-width="2" marker-end="url(#arrow-e)" />
+    <line x1="430" y1="100" x2="476" y2="100" stroke="#6b7280" stroke-width="2" marker-end="url(#arrow-e)" />
+    <line x1="690" y1="100" x2="736" y2="100" stroke="#6b7280" stroke-width="2" marker-end="url(#arrow-e)" />
+
+    <rect x="175" y="225" width="630" height="85" rx="8" fill="#ffffff" stroke="#d9dee6" />
+    <text x="210" y="258" font-size="18" font-weight="700" fill="#111827">resolveSegmentCollisionMove(...)</text>
+    <text x="210" y="282" font-size="14" fill="#4b5563">输入：当前位置、目标位置、半径、segments</text>
+    <text x="210" y="304" font-size="14" fill="#6b7280">输出：修正后 x/z 和 hit 标记，供 FPS/角色控制器使用</text>
+
+    <line x1="825" y1="140" x2="620" y2="221" stroke="#6b7280" stroke-width="2" marker-end="url(#arrow-e)" />
+  </svg>
+  <figcaption>这不是完整物理引擎，而是移动端 FPS 漫游足够轻的角色平面碰撞。</figcaption>
+</figure>
+
+CLI 形态大致是：
+
+```bash
+generate-spz-mobile-collision \
+  --collision-glb ./sample.collision.glb \
+  --report ./sample.collision-report.json \
+  --output ./src/generated/sampleCollision.ts
+```
+
+这个 resolver 解决的是 XZ 平面的角色移动阻挡。墙、柜台、边界被压成线段；角色有半径；每次移动时做 substep 和 push-out，最后返回修正后的位置和 `hit` 标记。
+
+## 资产策略
+
+公开仓库里不应该带私有大场景。当前那份 `1-world-500k.spz` 和它派生出的 collision/debug/voxel 数据，都不适合直接推到社区 fork。
+
+现在推上去的范围是：
+
+- native SPZ/Gaussian Splat renderer；
+- 默认 splat material；
+- `useGaussianSplat` 和 `<GaussianSplat />`；
+- `react-native-filament-spz` workspace 包；
+- collision segment resolver；
+- 通用 collision generation CLI。
+
+没有推上去的是：
+
+- 私有 SPZ 场景；
+- 由它生成的 collision/debug/voxel 文件；
+- 本地 FPS 漫游 demo；
+- iOS UI 漫游测试；
+- 本地角色球材质。
+
+后续如果要做社区 demo，应该找一个小型、license-clean 的 SPZ 样例。这个样例只需要证明：RNF 能加载 SPZ、可以切换 debug、可以做最小相机控制。复杂 FPS 漫游可以放到独立示例或后续文章里。
+
+## 社区贡献路线
+
+我倾向于分四步推进。
+
+### 1. 先稳定 RNF fork 的 SPZ renderer
+
+第一步只聚焦 native SPZ decode、Gaussian splat renderable、`useGaussianSplat`、`<GaussianSplat />` 和类型。不要让 PR 夹带私有场景资产和 FPS 业务逻辑。
+
+### 2. 把上层包做成 publish-ready
+
+`react-native-filament-spz` 现在已经有包形态，但后续要去掉 `private: true`，整理 peer dependency、README、CLI 文档和最小测试。
+
+### 3. 补一个 license-clean 小样例
+
+替换当前本地大场景，提供小型 SPZ + 最小 demo。这个 demo 的目的不是秀效果，而是证明渲染链路和 API 形态。
+
+### 4. 再推进 FPS/角色漫游
+
+等 renderer 和上层包边界稳定后，再把 camera controller、角色碰撞、debug overlay 作为增量功能推进。
+
+## 最核心的判断
+
+这套架构的核心不是“支持一个新文件后缀”，而是把 SPZ 作为 React Native Filament 的一种新 renderable 处理。
+
+底层回答的问题是：React Native Filament 能不能正确渲染 SPZ。
+
+上层回答的问题是：SPZ 怎么变成可漫游、可碰撞、可产品化的场景。
+
+这两个问题应该分开解决，也应该分开贡献。
