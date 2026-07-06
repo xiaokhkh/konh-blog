@@ -1,0 +1,290 @@
+---
+title: SPZ 到 Filament：Gaussian Splat 是怎么被真正画出来的
+description: 从 Filament Renderable、VertexBuffer/IndexBuffer、Material
+  Shader、透明排序和 chunk 裁切看 SPZ/Gaussian Splat 的底层渲染链路。
+pubDate: 2026-07-06
+tags:
+  - filament
+  - spz
+  - rendering
+  - react-native
+  - 3d
+cover: /images/covers/2026-07-06-spz-filament-render-pipeline-cover.png
+coverAlt: 手绘白板风格的 SPZ 到 Filament 渲染管线架构图
+---
+
+SPZ 不是一个可以直接丢进 `<Model />` 的普通模型文件。它不是 mesh，不天然拥有 triangle、normal、UV、texture 这些传统 glTF/GLB 管线熟悉的东西。
+
+它更接近一包被压缩过的 Gaussian splats：每个 splat 有自己的空间位置、尺度、旋转、颜色和透明度。要让它在 Filament 里被画出来，真正要做的是把这些 splats 转换成 GPU rasterizer 能理解的几何和 shader 参数。
+
+最短的结论是：
+
+```text
+SPZ bytes
+  -> decode 成 splat attributes
+  -> 每个 splat 展开成一个 quad
+  -> quad 写入 VertexBuffer
+  -> 按相机远近重排 IndexBuffer
+  -> Material shader 把 quad 像素解释成 Gaussian footprint
+  -> Renderable 进入 Scene，由 Filament Renderer 画出来
+```
+
+<figure>
+  <img src="/images/covers/2026-07-06-spz-filament-render-pipeline-cover.png" alt="手绘白板风格的 SPZ 到 Filament 渲染管线架构图" />
+  <figcaption>SPZ 进入 Filament 之前，需要先被转换成一套可绘制的 renderable 管线。</figcaption>
+</figure>
+
+## Filament 最后接收的是什么
+
+Filament 最后渲染的不是一个孤立的 `VertexBuffer`，而是挂在 entity 上的 `Renderable` component。
+
+一个可被渲染的对象大概由这几部分组成：
+
+```text
+Entity
+  + Renderable
+      + VertexBuffer
+      + IndexBuffer
+      + MaterialInstance
+      + BoundingBox
+      + PrimitiveType
+```
+
+也就是说，Filament 需要知道：
+
+- 顶点数据在哪里；
+- 顶点如何连成三角形；
+- 这些三角形用什么 shader/material 解释；
+- 这个对象的 bounds 是什么；
+- 这个 renderable 挂在哪个 entity 上。
+
+在传统 mesh 里，`VertexBuffer` 通常放的是模型表面的顶点、法线、UV。SPZ 不是这样。SPZ 没有现成的表面三角形，所以 C++ 层需要先为每个 splat 造出一个小的屏幕投影区域。
+
+## 为什么每个 splat 要变成 quad
+
+GPU rasterizer 擅长画三角形，不擅长直接画“一个高斯点”。
+
+所以实现上会把每个 splat 展开成一个 quad：
+
+```text
+v0 ---- v1
+|      |
+v3 ---- v2
+```
+
+这个 quad 不是最终视觉上的方块。它只是一个覆盖区域，让 fragment shader 有机会在这块区域内计算 Gaussian 权重、透明度和颜色。
+
+每个 splat 会生成 4 个 vertex，6 个 index：
+
+```text
+4 vertices:
+  corner = (-1, -1)
+  corner = ( 1, -1)
+  corner = ( 1,  1)
+  corner = (-1,  1)
+
+6 indices:
+  0, 1, 2,
+  2, 3, 0
+```
+
+如果有 50 万个 splats，初始几何量就是：
+
+```text
+VertexBuffer: 500000 * 4 vertices
+IndexBuffer: 500000 * 6 indices
+```
+
+这听起来很多，但它有一个好处：splat 的几何属性在加载后基本不变。相机移动时，真正需要变化的是透明绘制顺序。
+
+## VertexBuffer 里到底放什么
+
+这个实现里的每个 vertex 大概包含：
+
+```cpp
+struct GaussianSplatVertex {
+  float3 position;
+  float4 corner;
+  float4 axis0;
+  float4 axis1;
+  float4 axis2;
+  float4 color;
+};
+```
+
+这些字段分别对应：
+
+| 字段 | 作用 |
+| --- | --- |
+| `position` | splat center，四个 vertex 共用 |
+| `corner` | 当前 vertex 是 quad 的哪个角 |
+| `axis0/axis1/axis2` | splat 的空间尺度、方向和椭球形状 |
+| `color` | splat 的颜色和透明度 |
+
+这就是 SPZ 到 Filament 的关键转换：原本的 splat attributes 被重新打包成 shader 可以读取的 vertex attributes。
+
+## Shader 在这里是核心，不是细节
+
+这条管线里当然有 shader，而且 shader 决定了它是不是像 Gaussian Splat。
+
+vertex shader 负责把每个 splat 的中心、quad corner、axis 和相机信息组合起来，算出这个 quad 在屏幕上的位置。
+
+它大概在做：
+
+```text
+splat center
+  + corner
+  + axis
+  + camera right/up/forward
+  + render size / focal options
+  -> clip space position
+```
+
+fragment shader 则负责真正的高斯效果。一个 quad 覆盖了一块屏幕区域，fragment shader 对每个像素计算：
+
+```text
+这个像素离 splat 中心有多远
+高斯权重是多少
+alpha 是否低于阈值
+颜色如何混合
+blur / falloff / focus 如何影响它
+```
+
+所以视觉细腻度主要来自这些输入：
+
+- scale 和 rotation 解码是否正确；
+- `axis0/axis1/axis2` 是否保留原始 splat 形状；
+- alpha、falloff、blur、focal adjustment 是否稳定；
+- material 的 blend 和 depth write 设置是否适合透明 splat。
+
+这也是为什么性能优化时不能随便动 scale、quaternion、alpha 或 shader uniforms。它们一变，SPZ 很容易从“细腻”变成“粗糊”。
+
+## 为什么排序只改 IndexBuffer
+
+Gaussian splats 通常需要透明混合。透明对象的绘制顺序很重要，通常要从远到近画。
+
+但是每个 splat 的 vertex 数据并不会因为相机移动而变化：
+
+```text
+center 不变
+axis 不变
+color 不变
+quad 结构不变
+```
+
+变化的是“相机看过去谁远谁近”。
+
+所以更合理的做法是：
+
+```text
+VertexBuffer 固定
+IndexBuffer 随相机重排
+```
+
+每次相机变化时，C++ 只重新生成 index 顺序，再上传新的 index buffer。这样避免了重建或重传整块 vertex buffer。
+
+## Chunk 裁切只负责少扫点，不负责最终排序
+
+如果每次相机变化都遍历 50 万 splats，CPU 压力会很大。所以加载时会先构建空间 chunk。
+
+加载阶段做：
+
+```text
+整体 bounding box
+  -> 划分 grid
+  -> 每个 splat 落入一个 cell
+  -> 每个非空 cell 生成 AABB
+  -> splats 按 chunk 连续存放
+```
+
+运行时做：
+
+```text
+先测 chunk AABB 是否可见
+不可见 chunk 整个跳过
+可见 chunk 内的 splats 才进入排序候选
+```
+
+但 chunk 不能直接变成多个独立 draw call。原因是透明排序必须是全局的。
+
+如果按 chunk 画：
+
+```text
+chunk A 全部画完
+chunk B 全部画完
+chunk C 全部画完
+```
+
+透明混合顺序可能错。真正正确的顺序可能是：
+
+```text
+A 的一部分
+C 的一部分
+B 的一部分
+A 的另一部分
+```
+
+所以现在的策略是：
+
+```text
+chunk 只做 coarse culling
+可见 splats 汇总到一个全局 candidate list
+最后生成一个全局排序后的 IndexBuffer
+```
+
+这是性能和透明正确性之间比较稳的折中。
+
+## Bucket sort 为什么够用
+
+完整 `std::sort` 二十万级 splats 会很贵。这里用的是 bucket sort 思路：
+
+```text
+每个 visible splat 算 metric
+metric 映射到 bucket
+bucket 从远到近写 index
+```
+
+同时不会每帧清空完整 65536 个 bucket，而是记录 touched buckets。下一帧只清理上一帧碰过的 bucket。
+
+这类优化的特点是：它不改变数据含义，只减少热路径里的无效工作。
+
+## C++ 层真正承担的职责
+
+把 SPZ 放进 Filament，不是“支持一个新文件扩展名”这么简单。C++ 层至少承担五个职责：
+
+1. 解码 SPZ bytes，得到 splat attributes。
+2. 把 splat attributes 转成 Filament vertex attributes。
+3. 创建 `VertexBuffer`、`IndexBuffer`、`MaterialInstance` 和 `Renderable`。
+4. 每次相机变化时做 chunk culling、排序和 index upload。
+5. 保证 shader 参数、透明混合和 bounds 与场景相机协同工作。
+
+这条边界清楚之后，React 侧就可以很轻：
+
+```text
+load SPZ
+拿到 native GaussianSplat resource
+add entity to scene
+每帧同步 camera view / render size / sort view
+```
+
+复杂性留在 native 渲染管线里。
+
+## 最后的判断标准
+
+这类优化不能只看“测试过了”。更重要的是看它有没有改变视觉和行为。
+
+我现在会用几条门槛卡住它：
+
+- rendered splat count 稳定；
+- camera diagnostics 稳定；
+- chat/tap/path 行为不变；
+- SPZ 细腻度不退化；
+- 只减少 CPU 遍历、临时对象、buffer 分配或 GPU 上传。
+
+如果一个优化理论上等价，但让采样时机漂移，或者让 rendered count 进入过渡样本，就先回滚。
+
+这也是这条管线的核心原则：
+
+```text
+性能优化可以持续做，但不能换掉视觉结果。
+```
