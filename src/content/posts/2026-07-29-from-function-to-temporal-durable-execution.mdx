@@ -1,0 +1,379 @@
+---
+title: "Temporal 是怎么被逼出来的：从普通函数到持久化执行"
+description: "从一次进程崩溃开始，逐步推导重试、幂等、队列、Job、状态机、Event History 与 Workflow/Activity，理解 Temporal 为什么存在。"
+pubDate: 2026-07-29
+tags:
+  - temporal
+  - distributed-systems
+  - backend
+  - architecture
+cover: /images/covers/2026-07-29-from-function-to-temporal.png
+coverAlt: 小黑转动手摇机器，把会断的普通函数变成经过执行历史后继续运行的橙色路径
+---
+
+先看一段再普通不过的代码：
+
+```ts
+async function replyToUser(message: string) {
+  const reply = await callModel(message);
+  await saveReply(reply);
+  return reply;
+}
+```
+
+如果 `callModel()` 已经成功，进程却在 `saveReply()` 之前崩溃，会发生什么？
+
+外部调用已经产生结果，但数据库里没有记录。重启后，系统既不知道应该继续保存，还是重新调用，也不知道第一次调用是否产生了不可逆副作用。
+
+Temporal 要解决的，就是这条裂缝。
+
+它不是从“需要一个更高级的队列”开始的，而是从一个更根本的问题开始：
+
+> 一个跨越几分钟、几天甚至几个月的函数，怎样在进程崩溃、网络失败和重复请求之后，仍然正确执行到结束？
+
+![小黑拿着已经生成的结果，卡在外部调用完成但数据库尚未保存的进程崩溃断点上](/images/uploads/2026-07-29-temporal-durable-execution/01-crash-gap.png)
+
+从最简单的工作模式往上推，路径大致是：
+
+```text
+普通函数
+  + 超时和重试
+  + 幂等
+  + 队列
+  + 持久化任务状态
+  + 多步骤状态机
+  + Event History 与 Replay
+  + Workflow / Activity 分离
+  = Temporal
+```
+
+关键不是每个系统最后都要用 Temporal。关键是知道复杂度在哪一步出现，并在足够简单的位置停下来。
+
+## 第一步：普通同步函数
+
+```text
+用户请求 → API → 执行业务 → 返回结果
+```
+
+同步函数的重要性在于，它是成本最低、因果关系最清楚的基线。
+
+只要工作时间短、失败可以直接反馈给用户、没有跨系统副作用，普通函数通常就是最好的方案。不要因为“未来可能复杂”就提前把它放进队列或工作流系统。
+
+它的边界也很明确：执行状态只存在于进程内存里。进程消失，调用栈和局部变量也一起消失。
+
+## 第二步：增加超时和重试
+
+网络会抖动，模型服务会返回 `503`，数据库连接会短暂中断。最自然的改进是重试：
+
+```ts
+await retry(() => callModel(message), {
+  timeout: 30_000,
+  maximumAttempts: 3,
+});
+```
+
+重试的重要性，是把瞬时故障从业务失败中剥离出去。
+
+但超时只说明“调用方没有及时收到结果”，不说明“服务端没有执行”。第一次请求可能已经成功，只是响应丢了。第二次调用就可能重复发消息、重复创建记录，甚至重复扣款。
+
+所以重试会立刻逼出下一项能力：幂等。
+
+## 第三步：让副作用幂等
+
+为任务和每一次副作用分配稳定标识：
+
+```text
+taskId       = task-123
+modelCallId  = task-123:generate
+paymentId    = task-123:capture
+```
+
+外部系统收到相同幂等键时，应返回第一次执行的结果，而不是再次执行。
+
+幂等的重要性可以压缩成一句话：
+
+> 它把“不敢重试”变成“可以安全重试”。
+
+这里有一个经常被忽略的事实：Temporal 也不会替你消除外部副作用的重复执行。Activity 失败后可能再次尝试，所以数据库写入、支付、消息发送、模型调用仍然要设计幂等。Temporal 官方也明确建议 Activity 保持幂等。[Temporal Activities](https://docs.temporal.io/activities)
+
+## 第四步：队列和 Worker
+
+当任务时间变长，HTTP 请求不该一直等下去：
+
+```text
+API → Queue → Worker → 外部服务
+```
+
+API 只提交任务，Worker 在后台执行：
+
+```ts
+await queue.publish({
+  taskId: "task-123",
+  type: "agent.execute",
+});
+```
+
+队列的重要性在于解耦：
+
+- API 不必等待任务完成；
+- 流量高峰可以被缓冲；
+- Worker 可以独立扩容；
+- 暂时没有 Worker 时，任务仍可以保留。
+
+但队列通常只知道“消息有没有被投递和确认”，不知道业务执行到了哪一步。
+
+它无法直接回答：
+
+- 计划生成了吗？
+- 用户批准了吗？
+- 外部工具已经执行了吗？
+- 失败后应该重试还是补偿？
+
+队列解决的是任务传递，不是业务流程。
+
+## 第五步：持久化 Job 状态
+
+为了知道任务发生了什么，我们通常会增加一张 Job 表：
+
+```text
+jobs
+├── id
+├── status: pending / running / succeeded / failed
+├── attempts
+├── availableAt
+├── leaseOwner
+├── leasedUntil
+└── result
+```
+
+Worker 领取租约后执行：
+
+```text
+PENDING → LEASED → COMPLETED
+                 ↘ FAILED / RETRY
+```
+
+租约让其他 Worker 可以接管失联任务；Fencing Token 阻止已经失去租约的旧 Worker 在恢复连接后继续提交结果。
+
+这一层的重要性，是把单个后台任务变成一个可恢复、可观察、可并发处理的持久化对象。
+
+对于“调用一次模型，然后保存结果”这样的单步骤任务，这一层往往已经足够。继续引入 Temporal 只会增加运行时和运维成本。
+
+## 第六步：多步骤状态机
+
+现在把任务改成一个真实的 Agent 流程：
+
+```text
+用户发起任务
+  → 生成计划
+  → 等待用户批准
+  → 调用外部工具
+  → 写入业务结果
+  → 通知用户
+```
+
+系统开始需要显式状态：
+
+```text
+PLANNING
+  ↓
+WAITING_APPROVAL
+  ↓
+EXECUTING
+  ↓
+COMPLETED
+
+失败时：
+EXECUTING → COMPENSATING → FAILED
+```
+
+状态机的重要性，是让流程可以跨进程、跨服务、跨时间等待，并在部分成功后知道如何继续或回滚。
+
+与此同时，团队开始手写越来越多基础设施：
+
+- 状态表和迁移规则；
+- 定时扫描器；
+- 消息去重；
+- 重试调度；
+- 租约和并发控制；
+- 取消与补偿；
+- 运行历史和后台页面；
+- 代码升级后的兼容逻辑。
+
+![小黑不断给简单队列加上状态抽屉、计时器、租约和补偿轨道，最终拼出一台手写工作流机器](/images/uploads/2026-07-29-temporal-durable-execution/02-queue-to-workflow-engine.png)
+
+到了这里，问题已经不再是“如何执行一个任务”，而是“如何维护一台工作流引擎”。
+
+## 第七步：从保存状态升级为保存历史
+
+真正的概念转折，不是继续给 Job 表增加字段，而是记录一条不可变的有序执行历史：
+
+```text
+1. WorkflowStarted
+2. ActivityScheduled: createPlan
+3. ActivityCompleted: plan-001
+4. SignalReceived: approved
+5. ActivityScheduled: executeTool
+6. ActivityCompleted: result-001
+7. WorkflowCompleted
+```
+
+恢复时，系统重新运行 Workflow 代码：
+
+```ts
+async function agentTask(input: Input) {
+  const plan = await createPlan(input);
+  await waitUntilApproved();
+  const result = await executeTool(plan);
+  return result;
+}
+```
+
+重新运行到 `createPlan()` 时，执行历史已经记录了它的完成结果。系统直接返回 `plan-001`，不会再次调用模型。代码一直重放到第一个没有完成的位置，再从那里继续。
+
+这就是 Replay。
+
+![旧 Worker 崩溃后，小黑用电影胶片一样的事件历史重放到断点，再让任务继续运行](/images/uploads/2026-07-29-temporal-durable-execution/03-event-history-replay.png)
+
+Replay 的重要性，是让开发者继续用普通代码表达流程，而不必手动给每一个局部变量设计数据库检查点。
+
+Temporal 不恢复进程内存。它通过 Event History 重新运行 Workflow，重建执行状态。因此相同历史必须产生相同决策，Workflow 必须是确定性的。[Temporal Workflows](https://docs.temporal.io/workflows)
+
+## 第八步：分离 Workflow 和 Activity
+
+为了让 Replay 成立，代码必须被分成两类。
+
+Workflow 决定接下来做什么：
+
+```ts
+async function agentTask(input: Input) {
+  const plan = await activities.createPlan(input);
+
+  await condition(() => approved);
+
+  try {
+    return await activities.executeTool(plan);
+  } catch (error) {
+    await activities.releaseResources(plan);
+    throw error;
+  }
+}
+```
+
+它负责顺序、并行、分支、等待、超时、取消和补偿，但不直接访问数据库、网络、LLM 或支付服务。
+
+Activity 真正接触外部世界：
+
+```ts
+async function executeTool(plan: Plan) {
+  return externalApi.execute(plan, {
+    idempotencyKey: plan.executionId,
+  });
+}
+```
+
+![小黑在封闭控制室里只负责等待、分支和补偿，机械手在外部执行数据库、API 与 LLM 副作用](/images/uploads/2026-07-29-temporal-durable-execution/04-workflow-activity-boundary.png)
+
+这条边界很重要：
+
+```text
+Workflow 拥有流程决策
+Activity 执行外部副作用
+业务数据库拥有业务事实
+```
+
+Temporal Event History 是执行事实，不应该替代订单、用户、支付、对话和世界状态等领域数据。
+
+## 第九步：运行中的流程需要接受消息
+
+一个跨天执行的 Workflow 不只是后台任务。用户可能批准、拒绝、取消，系统也可能在运行中补充事件。
+
+Temporal 提供三种主要交互方式：
+
+- Query：读取 Workflow 当前状态；
+- Signal：发送异步事件；
+- Update：修改状态并等待处理结果。
+
+例如用户批准任务：
+
+```text
+WAITING_APPROVAL
+    ↓ Signal: approved
+EXECUTING
+```
+
+这使 Workflow 更像一个持久化的、有状态的服务，而不是消费完就消失的一条消息。[Workflow message passing](https://docs.temporal.io/develop/typescript/workflows/message-passing)
+
+## 到这里，Temporal 才真正形成
+
+把前面反复出现的公共能力抽出来，就得到 Temporal：
+
+```text
+Client
+  │ Start / Signal / Query / Update
+  ▼
+Temporal Service
+  ├── Event History
+  ├── Durable Timers
+  ├── Task Queues
+  ├── Retry / Cancellation
+  └── Workflow Visibility
+  │
+  ▼
+Workers
+  ├── Workflow：确定性流程决策
+  └── Activity：外部副作用
+  │
+  ▼
+PostgreSQL / LLM / Payment / Tools / APIs
+```
+
+Temporal 提供的是“持久化执行”：
+
+1. 保存完整执行历史；
+2. 通过 Replay 恢复 Workflow；
+3. 持久化计时器和等待；
+4. 调度 Activity 并管理重试；
+5. 在 Worker 崩溃后重新分配任务；
+6. 接收 Signal、Query 和 Update；
+7. 提供取消、补偿和运行可见性。
+
+它没有替你解决：
+
+- 业务规则；
+- Activity 幂等；
+- 数据库事务；
+- 外部系统的重复副作用；
+- 领域事实归属；
+- Workflow 版本兼容；
+- Temporal 服务自身的部署和运维。
+
+如果选择自托管，TLS、认证、监控、Visibility、数据存储、升级和灾难恢复都会成为团队责任。[Temporal self-hosted guide](https://docs.temporal.io/self-hosted-guide)
+
+## 在哪一步停下来
+
+| 工作形态 | 更合适的方案 |
+| --- | --- |
+| 短、同步、失败可直接返回 | 普通函数 |
+| 短任务，需要吸收瞬时故障 | 超时、重试、幂等 |
+| 单步骤后台任务，需要削峰 | 队列 |
+| 单步骤任务，需要恢复和观察 | PostgreSQL Job、租约和 Fencing |
+| 少量固定多步骤流程 | 显式状态机 |
+| 长时间、多步骤、等待外部事件、取消、补偿和故障恢复 | Temporal |
+
+对 Agent 产品来说，真正适合 Temporal 的通常不是“调用一次模型生成回复”，而是这一类任务：
+
+```text
+生成计划
+→ 调用多个工具
+→ 等待用户确认
+→ 跨小时或跨天恢复
+→ 失败后补偿
+→ 支持取消和审计
+```
+
+最后的判断标准只有一个：
+
+> 当手写状态机、重试、计时器、恢复和补偿的复杂度，已经高于维护 Temporal 的成本，Temporal 才是更简单的方案。
+
+Temporal 最重要的价值不是“更高级的队列”，而是让一个跨时间、跨故障的业务流程，仍然可以像普通函数一样被编写和理解。
