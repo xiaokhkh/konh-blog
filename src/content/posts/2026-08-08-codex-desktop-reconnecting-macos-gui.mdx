@@ -1,0 +1,263 @@
+---
+title: Codex Desktop 一直 Reconnecting？macOS GUI 代理问题的完整解决方案
+description: Codex CLI 能联网、Desktop 却连不上 Remote 或反复 Reconnecting 时，如何用
+  codex-gui-proxy 诊断并把代理注入 launchd 环境。
+pubDate: 2026-08-08
+tags:
+  - codex
+  - macos
+  - proxy
+  - debugging
+---
+
+最近在 macOS 上遇到一个很典型的问题：终端里的 Codex CLI 可以使用，Codex Desktop 却连不上 Remote，或者对话一直停在 `Reconnecting...`。
+
+代理软件明明已经启动，浏览器和终端也能正常访问网络，为什么 GUI 还是不通？
+
+根因通常不是代理端口错误，而是 **从 Finder 或 Dock 启动的 macOS GUI 应用不会读取 `~/.zshrc`，因此 Codex Desktop 的 app-server 没有继承终端里的代理环境变量**。
+
+这篇文章给出一套从诊断到修复、验证和清理的完整方案。
+
+## 先看最短解决方案
+
+假设你的 HTTP 代理监听在 `127.0.0.1:7890`，依次执行：
+
+```bash
+npx codex-gui-proxy check
+npx codex-gui-proxy set --proxy http://127.0.0.1:7890
+```
+
+设置完成后，**完全退出 Codex Desktop，再重新打开**。只关闭窗口通常不够，需要用 `Command + Q` 退出应用。
+
+重新打开后再检查：
+
+```bash
+npx codex-gui-proxy check
+```
+
+如果代理监听正常，`HTTP_PROXY`、`HTTPS_PROXY`、`ALL_PROXY` 都已经写入，并且状态不再提示缺少 LaunchAgent，通常就修好了。
+
+工具仓库：[`xiaokhkh/codex-gui-proxy`](https://github.com/xiaokhkh/codex-gui-proxy)
+
+## 为什么终端能用，Codex Desktop 却不行？
+
+很多人的代理配置写在 `~/.zshrc` 或 `~/.zprofile`，例如：
+
+```bash
+export HTTP_PROXY=http://127.0.0.1:7890
+export HTTPS_PROXY=http://127.0.0.1:7890
+```
+
+这些变量只对由 shell 启动、并且读取了相应配置文件的进程生效。
+
+从 Finder、Dock 或 Spotlight 启动的 GUI 应用由 macOS `launchd` 管理，并不会自动进入你的交互式 zsh 环境。于是系统里会出现两套看似矛盾的状态：
+
+- 终端中的 `curl`、Git、npm 和 Codex CLI 能走代理；
+- Codex Desktop 及其 app-server 没拿到代理变量，仍然尝试直连；
+- 最终表现为 Remote 连不上、请求超时或持续 `Reconnecting...`。
+
+所以，只在 `~/.zshrc` 里增加 `export` 并不能稳定解决 GUI 的连接问题。
+
+## 第一步：确认本地代理端口
+
+先确认 ClashX、Clash Verge、Surge、mihomo 或其他代理软件正在运行，并找到它的 HTTP 代理端口。
+
+常见地址是：
+
+```text
+http://127.0.0.1:7890
+http://127.0.0.1:1080
+```
+
+可以用下面的命令确认端口是否监听：
+
+```bash
+lsof -nP -iTCP:7890 -sTCP:LISTEN
+```
+
+如果没有输出，先检查代理软件配置。工具只能把 Codex 指向一个代理，不能替你启动代理服务。
+
+## 第二步：运行诊断
+
+正确的 npm 包名是 `codex-gui-proxy`：
+
+```bash
+npx codex-gui-proxy check
+```
+
+一个需要修复的典型结果可能是：
+
+```text
+Proxy target: http://127.0.0.1:7890
+Proxy listener: ok
+LaunchAgent: missing
+launchctl HTTP_PROXY: (empty)
+launchctl HTTPS_PROXY: (empty)
+launchctl ALL_PROXY: (empty)
+Status: needs attention
+```
+
+这里最重要的证据有两条：
+
+1. `Proxy listener: ok`：代理服务和端口本身是正常的；
+2. `launchctl ...: (empty)`：GUI 应用所在的 launchd 会话没有代理变量。
+
+这时就不需要继续反复修改 shell 配置了，问题已经定位到 GUI 进程环境。
+
+## 第三步：写入 GUI 代理环境
+
+执行：
+
+```bash
+npx codex-gui-proxy set --proxy http://127.0.0.1:7890
+```
+
+把 `7890` 换成你的实际 HTTP 代理端口。
+
+成功时会看到类似输出：
+
+```text
+Wrote ~/Library/LaunchAgents/com.local.codex-gui-proxy.plist
+Set HTTP_PROXY to http://127.0.0.1:7890
+Set HTTPS_PROXY to http://127.0.0.1:7890
+Set ALL_PROXY to http://127.0.0.1:7890
+Set NO_PROXY to localhost,127.0.0.1,::1
+Proxy listener: ok
+```
+
+这个命令会把代理写进当前用户的 launchd 环境，并创建 LaunchAgent，让配置在重新登录或重启后仍能恢复。
+
+`NO_PROXY` 中保留 `localhost`、`127.0.0.1` 和 `::1` 很重要，否则 Codex 与本机 app-server、stdio helper 等本地进程之间的通信也可能被错误地送进代理。
+
+## 容易踩的三个命令坑
+
+### 1. 包名写反了
+
+下面这个包不存在：
+
+```bash
+npx gui-codex-proxy
+```
+
+npm 会返回 `E404 Not Found`。正确写法是：
+
+```bash
+npx codex-gui-proxy
+```
+
+### 2. 把 alias 当成 npm 包
+
+工具帮助中会显示：
+
+```text
+codex-gui-proxy-check
+codex-gui-proxy-clean
+codex-gui-proxy-set
+```
+
+这些是包安装后提供的可执行文件别名，不是三个独立的 npm 包。因此下面这条命令也会 404：
+
+```bash
+npx codex-gui-proxy-set --proxy http://127.0.0.1:7890
+```
+
+用 `npx` 临时执行时，最稳妥的方式是始终使用主包名加子命令：
+
+```bash
+npx codex-gui-proxy set --proxy http://127.0.0.1:7890
+```
+
+### 3. 直接运行 alias，shell 提示找不到
+
+如果没有全局安装，直接执行：
+
+```bash
+codex-gui-proxy-set --proxy http://127.0.0.1:7890
+```
+
+zsh 会提示 `command not found`。这是因为 `npx` 下载的临时包不会把别名永久加入系统 `PATH`。
+
+你可以继续使用前面的 `npx ... set`，没有必要全局安装。
+
+## 第四步：彻底重启并验证
+
+代理环境只会在进程启动时被读取。设置之后，已经运行的 Codex Desktop 和 app-server 不会自动获得新变量。
+
+用 Codex 菜单中的 `Quit Codex` 或按 `Command + Q` 完整退出应用，再重新打开 Codex，然后运行：
+
+```bash
+npx codex-gui-proxy check
+```
+
+同时可以直接查看 launchd 中的值：
+
+```bash
+launchctl getenv HTTP_PROXY
+launchctl getenv HTTPS_PROXY
+launchctl getenv ALL_PROXY
+launchctl getenv NO_PROXY
+```
+
+预期前三项返回你的代理 URL，最后一项返回本地绕过列表。
+
+然后新建一个 Codex 对话或重新连接 Remote。如果不再出现连续重试，说明修复已经生效。
+
+## 代理端口不是 7890 怎么办？
+
+直接传入实际端口即可：
+
+```bash
+npx codex-gui-proxy set --proxy http://127.0.0.1:1080
+```
+
+也可以传 `host:port`：
+
+```bash
+npx codex-gui-proxy set --proxy 127.0.0.1:1080
+```
+
+建议优先使用代理软件提供的 HTTP 或 mixed 端口，并明确写上 `http://`。不要看到 SOCKS 端口就机械替换；先确认该端口实际支持的协议。
+
+## 如何恢复和清理？
+
+先预览会清理什么：
+
+```bash
+npx codex-gui-proxy clean --dry-run
+```
+
+确认无误后应用：
+
+```bash
+npx codex-gui-proxy clean --apply
+```
+
+清理后同样需要完全退出并重新打开 Codex Desktop。
+
+## 如果仍然连接不上
+
+按下面的顺序继续排查：
+
+1. 再次运行 `check`，确认代理端口仍然处于监听状态；
+2. 确认使用的是 HTTP/mixed 端口，而不是不兼容的 SOCKS 端口；
+3. 检查代理规则是否允许 OpenAI、ChatGPT 和 Codex 相关域名通过；
+4. 确认设置后真正退出并重启了 Codex，而不是只关闭窗口；
+5. 如果代理软件切换了端口，重新运行 `set` 更新地址；
+6. 临时切换代理节点，排除节点不支持目标服务或 WebSocket 的情况。
+
+需要注意：这个方案解决的是“终端进程有代理，但 macOS GUI 进程没有继承代理”的问题。账号权限、Remote 服务端状态、公司网络策略或第三方 API `base_url` 配置错误，需要分别排查。
+
+## 结论
+
+Codex CLI 能联网而 Desktop 连不上 Remote，最值得优先检查的不是 `~/.zshrc`，而是 launchd 环境：
+
+```bash
+npx codex-gui-proxy check
+npx codex-gui-proxy set --proxy http://127.0.0.1:7890
+```
+
+设置后彻底重启 Codex Desktop，通常就能让 GUI app-server 正确走本地代理。
+
+项目地址：[`xiaokhkh/codex-gui-proxy`](https://github.com/xiaokhkh/codex-gui-proxy)
+
+如果这个工具解决了你的 Codex 连接问题，欢迎给仓库点一个 Star，谢谢！
