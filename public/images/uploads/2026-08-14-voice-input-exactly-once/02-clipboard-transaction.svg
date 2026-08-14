@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="780" viewBox="0 0 1600 780" role="img" aria-labelledby="title desc">
+  <title id="title">VoiceOps 安全剪贴板事务</title>
+  <desc id="desc">深复制原剪贴板，写入识别文本，等待 50 毫秒后发送一次 Cmd+V，750 毫秒后仅在 changeCount 未变化时恢复。</desc>
+  <defs>
+    <linearGradient id="bg2" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#f7f9fc"/><stop offset="1" stop-color="#edf2f7"/></linearGradient>
+    <marker id="arrow2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0L10 5L0 10z" fill="#738196"/></marker>
+    <style>
+      .t { font-family: Poppins, "PingFang SC", "Microsoft YaHei", sans-serif; fill: #182230; }
+      .m { fill: #66758a; }
+      .box { fill: #fff; stroke: #cad4e1; stroke-width: 2; }
+      .arrow { stroke: #738196; stroke-width: 4; fill: none; marker-end: url(#arrow2); }
+    </style>
+  </defs>
+  <rect width="1600" height="780" rx="34" fill="url(#bg2)"/>
+  <text class="t" x="90" y="95" font-size="46" font-weight="700">剪贴板是一笔可回滚事务</text>
+  <text class="t m" x="90" y="140" font-size="23">共享串行槽保证 write → settle → paste 不会被另一笔注入打断</text>
+
+  <g transform="translate(70 230)">
+    <rect class="box" x="0" y="0" width="250" height="170" rx="26"/>
+    <rect x="64" y="35" width="122" height="92" rx="10" fill="#eef3f8" stroke="#728197" stroke-width="3"/>
+    <path d="M82 57h86M82 77h66M82 97h76" stroke="#728197" stroke-width="6" stroke-linecap="round"/>
+    <text class="t" x="125" y="151" font-size="21" font-weight="600" text-anchor="middle">深快照全部类型</text>
+
+    <path class="arrow" d="M250 85H330"/>
+    <rect class="box" x="345" y="0" width="250" height="170" rx="26"/>
+    <circle cx="470" cy="74" r="48" fill="#dcfce7" stroke="#25b86a" stroke-width="3"/>
+    <path d="M439 74h62M470 43v62" stroke="#25b86a" stroke-width="7" stroke-linecap="round"/>
+    <text class="t" x="470" y="151" font-size="21" font-weight="600" text-anchor="middle">写入最终文本</text>
+
+    <path class="arrow" d="M595 85H675"/>
+    <rect class="box" x="690" y="0" width="250" height="170" rx="26"/>
+    <circle cx="815" cy="73" r="49" fill="#e6f6ff" stroke="#2aaee8" stroke-width="3"/>
+    <path d="M815 47v31l22 13" stroke="#2aaee8" stroke-width="7" fill="none" stroke-linecap="round"/>
+    <text class="t" x="815" y="151" font-size="21" font-weight="600" text-anchor="middle">等待 50ms</text>
+
+    <path class="arrow" d="M940 85H1020"/>
+    <rect x="1035" y="0" width="250" height="170" rx="26" fill="#eefbf4" stroke="#39c87e" stroke-width="2"/>
+    <rect x="1107" y="38" width="106" height="72" rx="14" fill="#fff" stroke="#39c87e" stroke-width="3"/>
+    <text class="t" x="1160" y="84" font-size="29" font-weight="700" text-anchor="middle">⌘V</text>
+    <text class="t" x="1160" y="151" font-size="21" font-weight="600" text-anchor="middle">只发送一次</text>
+
+    <path class="arrow" d="M1285 85H1365"/>
+    <rect class="box" x="1380" y="0" width="150" height="170" rx="26"/>
+    <text class="t" x="1455" y="70" font-size="35" font-weight="700" text-anchor="middle">750</text>
+    <text class="t m" x="1455" y="102" font-size="20" text-anchor="middle">ms</text>
+    <text class="t" x="1455" y="145" font-size="18" font-weight="600" text-anchor="middle">延迟检查</text>
+  </g>
+
+  <g transform="translate(240 500)">
+    <rect x="0" y="0" width="1120" height="180" rx="30" fill="#17202e"/>
+    <text x="48" y="52" font-family="Poppins, PingFang SC, sans-serif" fill="#fff" font-size="24" font-weight="700">compare-and-restore</text>
+    <text x="1072" y="52" font-family="Poppins, PingFang SC, sans-serif" fill="#93a4b8" font-size="16" text-anchor="end">generation 只允许最新恢复任务生效</text>
+    <path d="M48 88H1072" stroke="#334155" stroke-width="2"/>
+    <circle cx="70" cy="128" r="13" fill="#39e58c"/>
+    <text x="99" y="137" font-family="Poppins, PingFang SC, sans-serif" fill="#e8edf5" font-size="21">changeCount 仍等于本次写入值：恢复深快照</text>
+    <circle cx="635" cy="128" r="13" fill="#f6c85f"/>
+    <text x="664" y="137" font-family="Poppins, PingFang SC, sans-serif" fill="#e8edf5" font-size="21">用户复制新内容：跳过恢复</text>
+  </g>
+</svg>

@@ -2,12 +2,15 @@
 title: "VoiceOps Is a Local-First Interaction Layer"
 description: "What building MLX VoiceOps taught me about latency, focus, fallback, and local AI product surfaces."
 pubDate: 2026-05-18
+updatedDate: 2026-08-14
 tags: ["ai", "voice", "macos", "engineering"]
 cover: "/images/covers/voiceops-local-layer.png"
 coverAlt: "Abstract desktop voice pipeline with waveform, local model block, and focused text target"
 ---
 
 MLX VoiceOps started as a simple wish: hold **Fn**, speak, and have useful text land in the app that already has focus.
+
+> **August 14, 2026 update:** The final delivery path has been redesigned around a Session state machine, target-PID guard, private Cmd+V events, and compare-and-restore clipboard transactions. It no longer restores Accessibility focus or retries the same transcript through a second write path. See [the exactly-once input-chain post](/posts/2026-08-14-voiceops-exactly-once-input-chain/).
 
 That sounds like a speech-to-text shortcut. It is not. Once the result has to appear in Slack, Chrome, VS Code, or any arbitrary macOS text field without stealing focus, the product becomes a local interaction layer. The hard parts are not only ASR quality or model choice. They are timing, session boundaries, focus ownership, permissions, fallbacks, and whether the system behaves well when one local component is slow or unavailable.
 
@@ -25,7 +28,7 @@ The main lesson: local AI products should be designed around the user's active s
 
 The most important design decision was using **Fn down** and **Fn up** as the session contract.
 
-On key down, VoiceOps captures the focused app, the focused accessibility element, any selected text, and starts audio capture. On key up, it stops streaming, runs final ASR, optionally routes through the offline LLM, and injects the result back into the original target.
+On key down, VoiceOps creates a Session before any asynchronous work, captures the frontmost process ID and optional selection context, and starts audio capture. On key up, it stops streaming, runs final ASR, optionally routes through the offline LLM, and delivers the result only if that Session still owns its single insertion slot.
 
 That boundary is stricter than a normal recording button. It gives the system a clear lifecycle:
 
@@ -75,7 +78,9 @@ This is the right shape for local AI utilities. Local models can be excellent, b
 
 The preview panel is intentionally non-interactive. It should never become key. The user's real workspace is the focused text field in another app.
 
-That forced VoiceOps to treat focus as data. At session start, it captures both the frontmost process and the focused Accessibility element. At injection time, it first tries to write through the captured target. If that fails, it prepares the target by activating the original app and setting the AX focused attribute, then falls back to paste-based injection. If translation fails to inject, it can still fall back to the raw ASR text.
+That forced VoiceOps to treat focus as data. At session start, it captures the frontmost process ID. At injection time, it verifies that the same process is still frontmost. If the user has moved elsewhere, VoiceOps leaves the final transcript on the clipboard instead of activating an old app or guessing a new destination.
+
+Delivery now has one mutation boundary: a private event source posts one Command-modified V down/up pair. Accessibility is still required for event injection and optional selection context, but it is no longer used as a universal text-write API. A failed or unverifiable paste is never followed by AX mutation or simulated Unicode typing for the same Session.
 
 This part is easy to underestimate. In a desktop workflow tool, "where does the text land?" is a correctness property. A great transcript inserted into the wrong app is a failure.
 
@@ -104,7 +109,8 @@ The durable choices from this project are:
 - define the human gesture as the session boundary,
 - separate preview latency from final quality,
 - keep local models optional through timeouts and fallbacks,
-- capture the original focus target before doing model work,
+- capture the original target process before doing model work,
+- make one Session own at most one automatic delivery,
 - instrument the pipeline at real product boundaries,
 - make generated text recoverable through local history.
 

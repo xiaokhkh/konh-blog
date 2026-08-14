@@ -1,0 +1,158 @@
+---
+title: 从“偶尔不输入、偶尔输入两次”到 Exactly-Once 语音投递
+description: 把 ESP32-S3 Touch AMOLED、MLX Voice Mic 与 macOS VoiceOps 接成可靠语音输入设备后，如何用 Session 状态机、PID guard、private Cmd+V 和安全剪贴板事务解决无输入与重复输入。
+pubDate: 2026-08-14
+tags:
+  - voice
+  - macos
+  - esp32
+  - swift
+  - engineering
+cover: /images/covers/2026-08-14-voice-input-exactly-once-cover.png
+coverAlt: ESP32-S3 圆形 AMOLED 麦克风通过 USB-C，将波形经过 Session guard 和剪贴板投递到一个桌面文本光标
+---
+
+把一块 Waveshare ESP32-S3 Touch AMOLED 1.75 接到 Mac，做成 VoiceOps 的专用收音器，硬件部分很快就能跑起来：板载 ES7210 采集 24kHz 单声道音频，USB 同时暴露音频设备和 HID，按住屏幕、PWR 或 BOOT 时发送 F13，松开后结束录音。
+
+真正难的是最后几十毫秒。
+
+识别结果已经生成，历史数据库里也有文字，但目标输入框有时什么都没有；继续补一个 fallback 后，文字又可能出现两次。问题不在模型，而在桌面副作用：焦点会变化，Accessibility 对 Electron/WebView 的支持不一致，剪贴板是全局资源，合成按键还可能继承用户正在按住的 Fn、Control 或 Option。
+
+这次重构的目标不是“提高成功率”，而是给语音投递一个更严格的契约：
+
+> 一个物理按住周期创建一个 Session；一个 Session 最多拥有一次文字投递。
+
+## 先看同类工具怎么做
+
+截至 2026 年 8 月 14 日，我对照了 OpenLess、Koe、VocaMac 和 OpenWhisper 的当前实现。它们的共同点不是某个 ASR 模型，而是都把 macOS 文本输入收敛到一个明确的交付边界：剪贴板加一次 Cmd+V。
+
+差异主要在安全边界：
+
+| 实现 | 值得保留的做法 |
+| --- | --- |
+| OpenLess | 非激活悬浮窗、Session 状态机、失败后 copy-only、条件恢复剪贴板 |
+| Koe | 注入时检查 Session 与目标 PID；使用 private event source 隔离实体修饰键 |
+| VocaMac | AX 只用于少数原生单行输入框；Electron、编辑器与终端走剪贴板路径 |
+| OpenWhisper | 流式预览与最终投递分离，最终文本只走一个出口 |
+
+Apple Accessibility API 不是所有输入框都完整实现的统一文本协议。对于 Electron 的 contenteditable，AX 调用返回成功，并不等于用户可见内容已经改变。因此，不能把“AX 没验证到变化”当成再次注入的理由。
+
+## 旧链路为什么会同时产生两类故障
+
+旧实现会在按下时保存 AX 输入元素，识别完成后尝试重新激活旧应用、恢复旧控件，再发送 Cmd+V。若事件构造失败，还可能继续尝试 AX selected text、完整 value 写入或 Unicode 模拟打字。
+
+这看起来像多层保险，实际上增加了不可判定状态：
+
+- 原输入控件可能已经被 Electron 重建，保存的 AX 引用失效；
+- 用户可能主动切换应用，强制切回旧应用反而违背意图；
+- `CGEvent.post` 只表示事件已经发布，没有“目标应用确认粘贴完成”的回执；
+- 第一次投递可能已经生效，只是 AX 观察不到，此时 fallback 就会制造第二份文字；
+- 等待麦克风权限或初始化时仍处于 `idle`，过早到达的 key-up 会被忽略。
+
+正确方向不是继续增加 fallback，而是删除第二条写入路径。
+
+## 状态机先决定谁有权产生副作用
+
+重构后，Session 在任何权限请求和音频启动之前创建。状态从原来的 `idle → streaming → ending` 扩展为：
+
+![VoiceOps 从 Starting、Listening、Processing 到 Inserting 的单次投递状态机](/images/uploads/2026-08-14-voice-input-exactly-once/01-exactly-once-state-machine.svg)
+
+`STARTING` 是最关键的新状态。如果用户快速点按，key-up 可能在麦克风启动完成之前到达。现在它会被记录为 `pendingStop`；音频一旦成功启动，Session 立即进入 Processing，而不是把松开事件丢掉并持续录音。
+
+每个异步边界都检查同一个 UUID：
+
+- 麦克风权限返回后检查；
+- selection capture 返回后检查；
+- Fast ASR session 建立后检查；
+- 最终 ASR 和 LLM 返回后检查；
+- 写剪贴板和发送 Cmd+V 之前再次检查。
+
+最终文本必须调用 `claimInsertion` 领取投递权。状态机会同时把 Phase 推进到 `INSERTING`，同一个 UUID 的任何第二次 claim 都会失败。这个约束比“记住我好像已经 paste 过”更可靠，因为它把副作用所有权写进了状态转换。
+
+Fast ASR 也被明确降级为 UI 角色：它只持有 `onPreviewText`，没有 injector 引用，所以部分识别结果不可能写入目标应用。
+
+## 不再恢复输入框，只验证目标进程
+
+macOS 预览窗本来就是 `nonactivatingPanel`，不能成为 key 或 main window。既然 UI 不抢焦点，就没有必要在结束时恢复 AX 控件。
+
+新的 Session 只记录录音开始时的前台 PID。注入瞬间如果当前 PID 已经不同，VoiceOps 不切换应用，也不猜测用户现在想输入到哪里，只把最终文本保留到剪贴板并记录 `copiedFocusChanged`。
+
+这是一种 fail-closed 设计。把文字留在剪贴板最多需要用户手动粘贴；把一段语音错误地注入终端、聊天框或另一份文档，后果要严重得多。
+
+## 为什么使用 private event source
+
+OpenLess 使用 HID 层事件源已经比 AX 直写通用，但 VoiceOps 的触发方式还有一个额外条件：用户可能仍在按 Fn，板端也会通过 HID 产生按键状态。
+
+如果合成事件继承系统当前修饰键，原本的 Cmd+V 可能变成 Control+Cmd+V，甚至在极端情况下只留下一个裸 `v`。因此这里采用 Koe 当前的做法：
+
+```swift
+let source = CGEventSource(stateID: .privateState)
+let events = PasteShortcutPlan.events(vKeyCode: resolvedVKeyCode)
+
+for event in events {
+    // 只创建 V key-down / key-up，两个事件都带 Command flag
+    cgEvent.flags = [.maskCommand]
+    cgEvent.post(tap: .cgSessionEventTap)
+}
+```
+
+不再额外发送 Command key-down 和 key-up。事件源或任一事件创建失败时，文本留在剪贴板；不会再调用 AX 或 Unicode typing。
+
+V 的 keycode 也不再永久写死为美式 QWERTY 的 9。VoiceOps 会从当前 ASCII-capable 输入布局解析真正产生字符 `v` 的键，Dvorak、Colemak 等布局解析失败时才回退到 keycode 9。
+
+## 剪贴板必须像事务，而不是临时变量
+
+剪贴板是系统级共享状态。只做“保存字符串、粘贴、恢复字符串”会丢失富文本、图片、文件 URL，也会覆盖用户在等待期间复制的新内容。
+
+![VoiceOps 深快照、单次粘贴与 compare-and-restore 剪贴板事务](/images/uploads/2026-08-14-voice-input-exactly-once/02-clipboard-transaction.svg)
+
+新的 `PasteboardTransaction` 做了几件事：
+
+1. 深复制所有 pasteboard item、type 和 data；
+2. 所有 FocusInjector 共用一个 MainActor 串行投递槽；
+3. 写入最终文本后等待 50ms，让剪贴板稳定；
+4. 若剪贴板管理器在这 50ms 内改写内容，先保存新内容，再重新写入识别文本；
+5. Cmd+V 发布成功后等待 750ms；
+6. 只有 `changeCount` 仍等于本次写入值时才恢复；
+7. restore generation 会让旧的延迟任务失效，连续两次语音不会互相覆盖；
+8. copy-only 结果永远不恢复旧内容，否则识别文本会消失。
+
+这里的关键不是 50ms 或 750ms 这两个具体数字，而是 compare-and-restore：恢复之前必须证明剪贴板仍由这笔事务拥有。
+
+## 开发板只负责清晰的物理边界
+
+板端固件没有承担识别逻辑，只提供两个稳定接口：
+
+- USB Audio：`MLX Voice Mic`，24kHz、单声道；
+- USB HID：按住时 F13 down，松开时 F13 up。
+
+接板后，AVAudioEngine 会把输入设备明确切换到 `MLX Voice Mic`，一次录音只绑定一个 CoreAudio input device，不会把 Mac 内置麦克风和开发板麦克风混在一起。板子不在时才回退系统输入。
+
+屏幕、PWR 和 BOOT 共享同一个 held guard。自然人声不会启动 Session；绿色圆形音量环也只在物理按住期间出现，松开后立即隐藏。Jam 表情资源继续从原 assets 分区读取，更新固件不擦除整片 Flash。
+
+## 测试证据
+
+这次把状态机和剪贴板事务抽成独立 Swift Package，加入了 11 个自动化测试，覆盖：
+
+- Starting 阶段提前松开；
+- 重复 key-down、key-up 与冷却期；
+- 过期 Session 回调；
+- 同一 Session 只能领取一次投递权；
+- Cmd+V 计划只有 V down/up 两个事件；
+- 富文本/自定义类型的深快照恢复；
+- 用户中途复制时跳过恢复；
+- 连续两次注入恢复批次前的剪贴板；
+- copy-only 取消旧恢复任务；
+- write → settle → paste 串行化。
+
+验证结果：11 个测试全部通过，Debug 和 Release 均构建成功，签名验证通过。新版本已安装到 `/Users/aminer/Applications/VoiceOps.app`，系统中只运行一个 VoiceOps 进程。`system_profiler` 识别到 `MLX Voice Mic` 为 USB、单输入通道、24kHz；项目 doctor 对 sidecar、模型、Ollama、应用签名和资源路径检查为 0 警告。
+
+自动化能证明状态约束和剪贴板所有权，但最后仍要做真实的人机验收：在 Codex、浏览器 contenteditable、飞书、TextEdit 和 Terminal 中分别按住板子说一句话，确认每次只出现一份文字；识别期间主动切换应用，确认结果只留在剪贴板。
+
+## 最后的产品结论
+
+语音输入最难的部分不是把声音变成文字，而是让文字以可预测的方式进入另一个应用。
+
+可靠的桌面 AI 工具应该把副作用当成协议：手势定义 Session，状态机定义所有权，PID 定义目标，剪贴板事务定义恢复边界，最终只有一个函数被允许发布 Cmd+V。
+
+Exactly-once 在桌面系统里无法从目标应用获得严格回执，但可以通过本地设计得到一个实用版本：**at-most-once 自动投递，加上 copy-only 可恢复降级**。这比“尽量多试几次”更接近用户真正需要的可靠性。
