@@ -12,7 +12,7 @@ cover: /images/covers/2026-08-14-voice-input-exactly-once-cover.png
 coverAlt: ESP32-S3 圆形 AMOLED 麦克风通过 USB-C，将波形经过 Session guard 和剪贴板投递到一个桌面文本光标
 ---
 
-把一块 Waveshare ESP32-S3 Touch AMOLED 1.75 接到 Mac，做成 VoiceOps 的专用收音器，硬件部分很快就能跑起来：板载 ES7210 采集 24kHz 单声道音频，USB 同时暴露音频设备和 HID，按住屏幕、PWR 或 BOOT 时发送 F13，松开后结束录音。
+把一块 Waveshare ESP32-S3 Touch AMOLED 1.75 接到 Mac，做成 VoiceOps 的专用收音器，硬件部分很快就能跑起来：板载 ES7210 采集 24kHz 单声道音频，USB 同时暴露音频设备和 HID；按住屏幕或 PWR 时发送 F13，松开后结束录音，正常运行时按 BOOT 则发送 F14 切换剪贴板面板。
 
 真正难的是最后几十毫秒。
 
@@ -124,11 +124,11 @@ V 的 keycode 也不再永久写死为美式 QWERTY 的 9。VoiceOps 会从当�
 板端固件没有承担识别逻辑，只提供两个稳定接口：
 
 - USB Audio：`MLX Voice Mic`，24kHz、单声道；
-- USB HID：按住时 F13 down，松开时 F13 up。
+- USB HID：屏幕/PWR 按住时 F13 down、松开时 F13 up；BOOT 单击发送 F14 down/up。
 
 接板后，AVAudioEngine 会把输入设备明确切换到 `MLX Voice Mic`，一次录音只绑定一个 CoreAudio input device，不会把 Mac 内置麦克风和开发板麦克风混在一起。板子不在时才回退系统输入。
 
-屏幕、PWR 和 BOOT 共享同一个 held guard。自然人声不会启动 Session；绿色圆形音量环也只在物理按住期间出现，松开后立即隐藏。Jam 表情资源继续从原 assets 分区读取，更新固件不擦除整片 Flash。
+屏幕和 PWR 共享同一个 held guard，BOOT 独立映射为剪贴板面板开关。两种 HID 状态会合并到同一份键盘报告，因此录音期间按 BOOT 不会意外释放 F13。自然人声不会启动 Session；绿色圆形音量环也只在屏幕/PWR 物理按住期间出现，松开后立即隐藏。Jam 表情资源继续从原 assets 分区读取，更新固件不擦除整片 Flash。
 
 ## 测试证据
 
