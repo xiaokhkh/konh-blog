@@ -1,0 +1,341 @@
+---
+title: 从单体循环到动态协作图：Agent 工程的演进与 Codex 实现解析
+description: 从 ReAct、AutoGen 到 LangGraph 与 Codex
+  MultiAgentV2，沿源码理解任务树、消息路由、邮箱、执行调度和状态恢复，辨清 agent 通信图与状态执行图的边界。
+pubDate: 2026-09-08
+tags:
+  - agents
+  - codex
+  - langgraph
+  - architecture
+  - engineering
+cover: /images/covers/2026-09-08-agent-graph-evolution-codex.webp
+coverAlt: 白底上，一位黑线涂鸦小人拉着真实橙色网线，连接一张稀疏的节点图。
+---
+
+**资料核查日期：2026 年 9 月 8 日**  
+当一个编程 agent 能创建同伴、交换中间发现、追加工作、等待回复，并在执行途中接受纠正时，它已经具备了协作系统的基本形态。今天的 Codex 值得研究，正因为这些动作已经有了明确的接口和运行时实现。
+
+但“用了 graph”这个说法仍然太宽。树本来就是图；几个模型互相聊天，也可以画成图。真正需要回答的是：图上的节点保存什么状态，边传递什么内容，消息何时触发执行，失败后从哪里恢复，最终由谁判断工作完成。
+
+本文的核心判断是：**当前可核查的 Codex MultiAgentV2，以树记录 agent 的创建关系，以会话范围内的消息路由支持跨分支协作，并把上下文、执行容量和实例驻留交给运行时管理。它具备动态通信图的能力；与 LangGraph 一类显式状态图运行时，在抽象重点上有所区别。**
+
+这里的“当前实现”固定到 OpenAI 公开仓库 `openai/codex` 的提交 [`3f76e88`](https://github.com/openai/codex/commit/3f76e88a480f15258eab3512e7eafca77bbe80ee)，提交时间为 2026-09-08 10:55:48 UTC。源码核查采用静态阅读，没有编译整个仓库，也没有实测所有并发与故障恢复场景。公开主分支、某个已安装的桌面版本，以及托管 Responses API，应分别看待。
+
+## 一、先理解一个 agent：模型判断，运行时执行
+
+可以把单个 agent 概括为一个持续循环：读取目标和已有信息，决定下一步，调用工具，接收结果，更新工作状态，再决定继续还是结束。
+
+模型在这个循环里承担判断和生成。运行时负责真正执行命令、读写文件、保存记录、处理超时、检查权限，以及把结果送回模型。一个模型输出“运行测试”，并不意味着测试已经运行；只有工具执行后，才产生可以核查的证据。
+
+这个分工决定了 agent 工程的基本问题：如何把一个具有不确定性的决策组件，接入需要明确执行语义的软件系统。
+
+当系统增加第二个 agent，这些问题会进一步扩大。每个参与者都有自己的判断和上下文，系统必须决定如何分工、如何交换信息、如何处理冲突，以及如何分配有限的执行资源。仅仅把同一段提示词调用多次，尚不足以解决这些问题。
+
+## 二、进化过程：几个相互交织的工程方向
+
+下面是一条理解现代大模型 agent 的代表性时间线。它不是“旧架构被新架构逐年淘汰”的历史，也不意味着这些论文或产品首次发明了所有相关思想。
+
+| 时间 | 代表性节点 | 解决的主要问题 |
+| --- | --- | --- |
+| 2022 年 10 月 | ReAct 论文 | 把推理、行动和环境反馈交替组织起来 |
+| 2023 年 8 月 | AutoGen 论文 | 把多个 agent 的对话与分工变成可编程流程 |
+| 2024 年 1 月 | LangGraph 发布 | 用循环图和状态转移表达 agent 工作流 |
+| 2024 年 11 月 | MCP 发布 | 标准化模型应用与外部工具、数据的连接 |
+| 2025 年 4 月 | A2A 发布 | 推动不同厂商、框架的 agent 跨系统互操作 |
+| 截至 2026 年 9 月 | Codex MultiAgentV2、Responses Multi-agent Beta | 将动态委派、消息、等待和执行控制纳入可直接使用的产品与运行时 |
+
+前三个时间节点分别可核查于 [ReAct 论文](https://arxiv.org/abs/2210.03629)、[AutoGen 论文](https://arxiv.org/abs/2308.08155)和 [LangGraph 发布文章](https://www.langchain.com/blog/langgraph)；协议时间节点见 [MCP 发布公告](https://www.anthropic.com/news/model-context-protocol)和 [A2A 发布公告](https://developers.googleblog.com/en/a2a-a-new-era-of-agent-interoperability/)。当前 Codex 与 API 的能力分别见[子 agent 文档](https://learn.chatgpt.com/docs/agent-configuration/subagents)及 [Responses Multi-agent 文档](https://developers.openai.com/api/docs/guides/responses-multi-agent)。
+
+### 从一次回答到持续行动
+
+ReAct 的代表性贡献，是将推理与环境交互交替展开：模型可以根据工具返回的信息调整后续行动。回答不再只能依赖最初输入，执行过程本身也在产生新证据。[ReAct 原论文](https://arxiv.org/abs/2210.03629)
+
+从工程角度看，这意味着开发者需要维护一个循环，而不是只处理一次请求。循环必须有停止条件，也需要处理无效动作、工具失败和上下文不断增长的问题。
+
+### 从一个上下文到多个工作上下文
+
+AutoGen 将多 agent 对话作为构建应用的方式，让不同参与者承担不同职责，并允许用代码和自然语言共同控制协作。[AutoGen 原论文](https://arxiv.org/abs/2308.08155)
+
+多个 agent 的价值不只在于同时工作。独立上下文也能让任务分开推进：定位问题的 agent 阅读大量日志，审查 agent 保持对变更目标的关注，主 agent 维护用户需求和最终取舍。
+
+代价是信息不再天然一致。A 看过的日志，B 未必知道；主 agent 改过的目标，子 agent 未必及时收到。于是消息传递、工作契约和结果汇总成为独立的工程任务。
+
+### 从约定步骤到可恢复的工作流
+
+LangGraph 在 2024 年初发布时，明确强调了 agent 运行时经常需要的循环图。它让开发者直接表达节点之间的流转，而不是把所有控制逻辑都隐藏在一段提示词里。[LangGraph 发布文章](https://www.langchain.com/blog/langgraph)
+
+这一方向随后围绕状态保存、暂停恢复和失败处理展开。图结构的意义在这里逐渐具体：既能说明下一步去哪里，也能为运行时提供保存和恢复执行所需的信息。
+
+### 从系统内部协作到跨系统连接
+
+MCP 与 A2A 解决的是另外两个层面。MCP 主要标准化模型应用获取工具和上下文的连接方式；A2A 主要面向不同系统之间的 agent 协作，涉及能力发现、任务状态和产物交换。它们可以与图运行时组合使用。[MCP 公告](https://www.anthropic.com/news/model-context-protocol)、[A2A 公告](https://developers.googleblog.com/en/a2a-a-new-era-of-agent-interoperability/)
+
+因此，出现 `send_message` 接口，并不能证明某个系统采用了 A2A；支持 MCP，也不意味着它自动拥有多 agent 调度器。连接协议与内部编排需要分别核查。
+
+## 三、graph 到底指什么：至少有四张不同的图
+
+理解多 agent 系统时，最容易犯的错误，是把所有关系画在同一张图里，然后对“图架构”做过度推断。
+
+| 图的种类 | 节点是什么 | 边表示什么 | 回答的问题 |
+| --- | --- | --- | --- |
+| 创建图 | agent 实例 | 谁创建了谁 | 归属、命名、父子关系 |
+| 通信图 | agent 实例 | 谁向谁发送消息 | 信息如何流动 |
+| 执行依赖图 | 任务或一次执行 | 哪个完成后另一个才能开始 | 如何调度、何时汇总 |
+| 产物依赖图 | 文件、补丁、测试结果等 | 哪个产物基于哪个版本 | 结果是否仍然有效 |
+
+例如，主 agent 创建实现者 A 和审查者 B，A 又创建定位问题的 C。创建关系是一棵树，但 C 可以直接给 B 发发现，B 也可以给 A 提修改建议。
+
+[![主 agent 的创建树，以及实现者、审查者和定位者之间跨分支的消息流动](/images/uploads/2026-09-08-agent-graph-evolution-codex/01-creation-and-communication.svg)](/images/uploads/2026-09-08-agent-graph-evolution-codex/01-creation-and-communication.svg)
+
+*点击技术图可查看原尺寸。*
+
+图中实线表示创建，虚线表示消息。它展示的是允许形成的逻辑关系，不是物理网络拓扑。
+
+这里还有一个更细的区别：A 与 B 的通信可以反复往返，形成环；但把具体执行编号为 A₁、B₁、A₂、B₂，就能按因果顺序记录每一次动作。**“参与者之间有环”与“执行记录可按时间展开”完全可以同时成立。**
+
+这也是为什么“从 DAG 进化到 graph”不是一个足够准确的总结。树和 DAG 都属于图；工程上的实质变化，是运行时支持哪些状态、路由和恢复语义。
+
+## 四、两种图架构：显式状态图与动态消息协作
+
+### 显式状态图：把执行规则写成程序
+
+LangGraph 的核心抽象是 State、Node 和 Edge。节点接收状态并产生更新，边决定后续执行。节点既可以包含模型调用，也可以只是普通代码。条件路由、`Send` 动态分发和 `Command` 都可以影响运行中的执行路径，因此不能把它理解为只能运行固定直线流程的框架。[Graph API](https://docs.langchain.com/oss/python/langgraph/graph-api)
+
+例如，一个修复流程可以写成：分析问题，生成补丁，运行测试；测试失败则回到修复，测试通过则审查。各步允许做什么、如何进入下一步，可以在程序里明确定义。
+
+### 动态消息协作：让模型在运行中组织工作
+
+另一种方式，是提供创建、发送消息、等待和追加任务等原语，由模型判断应该找谁、发什么、是否继续拆分。Codex MultiAgentV2 暴露了这样的协作接口，其实现可以从[处理器入口](https://github.com/openai/codex/blob/3f76e88a480f15258eab3512e7eafca77bbe80ee/codex-rs/core/src/tools/handlers/multi_agents_v2.rs)追踪。
+
+这种方式更适合事先无法完整列出路径的探索任务。例如排查一个故障，只有读完第一批日志，才知道下一步需要研究数据库还是网络连接。
+
+两种方式可以组合。一个业务系统可以用显式状态图管理受控阶段，在某个调查阶段内部启用动态多 agent 协作。流程的关键边界由代码保证，调查策略由模型选择。这是本文给出的组合设计建议，不是对 Codex 内部部署方式的描述。
+
+## 五、Codex 最新公开实现：从接口走进调用链
+
+接下来讨论的细节均以本文固定的源码提交为准。它比“我能看到哪些工具”的证据更深入，但仍不能证明所有发行版都启用了完全相同的路径。
+
+先用一张表定位六个协作动作，后面再解释它们如何实现：
+
+| 动作 | 主要作用 | 需要注意的边界 |
+| --- | --- | --- |
+| `spawn_agent` | 创建子 agent 并提交初始任务 | 分配身份、上下文和执行资源 |
+| `send_message` | 向已有 agent 投递信息 | 本身不启动新的执行回合 |
+| `followup_task` | 向已有 agent 追加工作 | 可触发执行，不能以根 agent 为目标 |
+| `wait_agent` | 等待自己的邮箱或新输入 | 超时不代表子任务失败 |
+| `interrupt_agent` | 打断目标当前执行 | 保留 agent，不能当作外部操作回滚 |
+| `list_agents` | 查看当前协作树中的 agent 与状态 | 查询范围受当前协作树约束 |
+
+接口对应关系见 [V2 处理器入口](https://github.com/openai/codex/blob/3f76e88a480f15258eab3512e7eafca77bbe80ee/codex-rs/core/src/tools/handlers/multi_agents_v2.rs#L32)；打断与查询细节见 [interrupt_agent.rs](https://github.com/openai/codex/blob/3f76e88a480f15258eab3512e7eafca77bbe80ee/codex-rs/core/src/tools/handlers/multi_agents_v2/interrupt_agent.rs) 和 [list_agents.rs](https://github.com/openai/codex/blob/3f76e88a480f15258eab3512e7eafca77bbe80ee/codex-rs/core/src/tools/handlers/multi_agents_v2/list_agents.rs)。
+
+### 5.1 agent 的地址有两层：任务路径与线程 ID
+
+Codex 的 `AgentPath` 保存类似 `/root/reviewer` 的规范路径。相对引用按调用者当前路径拼接，绝对引用直接解析；工具层还会先尝试将目标解析为线程 ID。[路径实现](https://github.com/openai/codex/blob/3f76e88a480f15258eab3512e7eafca77bbe80ee/codex-rs/protocol/src/agent_path.rs#L54)、[目标解析器](https://github.com/openai/codex/blob/3f76e88a480f15258eab3512e7eafca77bbe80ee/codex-rs/core/src/agent/agent_resolver.rs#L8)
+
+这个细节直接影响通信。例如 `/root/implementer` 引用 `tester`，对应的是它自己的子任务 `/root/implementer/tester`；如果它要给兄弟节点发消息，应使用 `/root/reviewer` 这样的完整路径。
+
+路径解决可读命名，线程 ID 解决具体实例定位。支持跨分支寻址，不意味着可以访问系统里任意一个用户任务。
+
+### 5.2 控制面是共享的，范围是一棵根任务树
+
+`AgentControl` 是多 agent 操作的控制入口。源码明确说明，它通常按根会话树创建，并由该树内的子 agent 共享。它持有共享注册表、驻留管理器、执行限制器等对象。[AgentControl](https://github.com/openai/codex/blob/3f76e88a480f15258eab3512e7eafca77bbe80ee/codex-rs/core/src/agent/control.rs#L115)
+
+注册表维护任务路径与线程信息的映射；消息目标还要通过“当前协作范围内已知 agent”的检查。[AgentRegistry](https://github.com/openai/codex/blob/3f76e88a480f15258eab3512e7eafca77bbe80ee/codex-rs/core/src/agent/registry.rs#L25)、[消息目标检查](https://github.com/openai/codex/blob/3f76e88a480f15258eab3512e7eafca77bbe80ee/codex-rs/core/src/tools/handlers/multi_agents_v2/message_tool.rs#L68)
+
+因此，A 直接给 B 发消息，意味着不需要主 agent 用自然语言代为转述。实际投递仍经过共同运行时。把这种逻辑直达称为“去中心化网络”，会超出证据。
+
+### 5.3 创建 agent 是一次受管理的资源分配
+
+`spawn_agent` 不只是换一段角色提示词。工具处理器会解析任务和历史继承方式，准备配置，处理模型、角色与运行时设置，然后把初始任务交给控制层。[Spawn 工具处理器](https://github.com/openai/codex/blob/3f76e88a480f15258eab3512e7eafca77bbe80ee/codex-rs/core/src/tools/handlers/multi_agents_v2/spawn.rs#L93)
+
+控制层再检查执行容量，预留资源，创建或分叉线程，提交注册信息，通知客户端新线程已出现，并保存父子创建关系。初始任务随后通过输入路径送入新 agent。[创建控制流程](https://github.com/openai/codex/blob/3f76e88a480f15258eab3512e7eafca77bbe80ee/codex-rs/core/src/agent/control/spawn.rs#L603)
+
+这样，一个子 agent 就不仅有“职责”，还有可寻址身份、自己的工作记录和受管理的生命周期。上下文继承只是创建时的起点，不会让之后发生的所有对话自动同步到其他 agent。
+
+### 5.4 发消息与启动工作，被明确分开
+
+V2 的消息处理器使用两种投递模式：`QueueOnly` 与 `TriggerTurn`。前者对应普通消息，后者对应追加任务；两者共用主要提交路径。追加任务不能以根 agent 为目标，这一限制直接写在处理器中。[消息处理器](https://github.com/openai/codex/blob/3f76e88a480f15258eab3512e7eafca77bbe80ee/codex-rs/core/src/tools/handlers/multi_agents_v2/message_tool.rs#L12)
+
+消息载体 `InterAgentCommunication` 包含发送者、接收者、内容和 `trigger_turn` 等字段，并支持不同内容表示。运行时最终会将消息转换为模型输入中的 agent 消息项。[通信数据结构](https://github.com/openai/codex/blob/3f76e88a480f15258eab3512e7eafca77bbe80ee/codex-rs/protocol/src/protocol.rs#L803)
+
+这一区分很有价值。“我找到一条线索”是一条信息；“请基于这条线索继续调查”是一项工作。系统可以把线索留给下一次执行，而不必为每条通知启动新的模型回合。
+
+从当前接口语义看，给空闲 agent 使用 `send_message`，不能当作已安排它开始工作。需要明确触发执行时，应使用 `followup_task`。正在运行的目标则由运行时在合适的消息边界吸收新信息。
+
+![黑线小人从浅绿色信件托盘搬出一封信，旁边的铃铛仍未被敲响](/images/uploads/2026-09-08-agent-graph-evolution-codex/mailbox.webp)
+
+*消息已经到达，与新工作已经开始，是两件事。*
+
+### 5.5 邮箱保存消息，通知机制唤醒等待者
+
+`InputQueue` 将待处理消息放入受互斥锁保护的 `VecDeque`，并使用 Tokio 的 `watch` 通道通知活动变化。消息入队后发出通知，后续流程再取出消息，转换成模型可接收的输入。[输入队列](https://github.com/openai/codex/blob/3f76e88a480f15258eab3512e7eafca77bbe80ee/codex-rs/core/src/session/input_queue.rs#L80)
+
+这里应区分两个对象：队列保存消息，`watch` 通知有活动发生。通知本身不是全部消息的替代品。源码还显式检查当前回合是否允许接收邮箱输入，并存在推迟到下一回合的路径。[回合投递控制](https://github.com/openai/codex/blob/3f76e88a480f15258eab3512e7eafca77bbe80ee/codex-rs/core/src/session/input_queue.rs#L213)
+
+因此，“已经投递”“已经进入模型上下文”“模型已经据此行动”是三个不同阶段。消息发送成功，不能作为对方完成工作的证据。
+
+下面把关键调用链画在一起。中间省略了配置、日志和错误处理，展示的是实现关系：
+
+[![一条消息经处理器、注册表、AgentControl 和目标邮箱进入模型上下文的路径](/images/uploads/2026-09-08-agent-graph-evolution-codex/02-message-delivery.svg)](/images/uploads/2026-09-08-agent-graph-evolution-codex/02-message-delivery.svg)
+
+*点击技术图可查看原尺寸。*
+
+### 5.6 等待模型从“盯一个目标”转向“监听自己的邮箱”
+
+同一源码快照仍保留两套处理器。旧式等待工具接收目标列表，并订阅这些线程的状态；V2 的 `wait_agent` 主要接收超时参数，监听调用者自己的输入队列活动。[旧式等待实现](https://github.com/openai/codex/blob/3f76e88a480f15258eab3512e7eafca77bbe80ee/codex-rs/core/src/tools/handlers/multi_agents/wait.rs#L54)、[V2 等待实现](https://github.com/openai/codex/blob/3f76e88a480f15258eab3512e7eafca77bbe80ee/codex-rs/core/src/tools/handlers/multi_agents_v2/wait.rs#L40)
+
+V2 区分邮箱活动、新输入打断和超时等等待结果。等待返回的是状态信息，消息内容通过输入投递机制进入上下文。[V2 等待结果](https://github.com/openai/codex/blob/3f76e88a480f15258eab3512e7eafca77bbe80ee/codex-rs/core/src/tools/handlers/multi_agents_v2/wait.rs#L132)
+
+在架构意义上，这更接近一个有身份、有邮箱、可持续执行的参与者。主 agent 等待时，下一条有用信息可能来自任意一个协作者，而不必事先指定唯一的信息来源。
+
+这是对同一提交中两套接口的比较，不能直接当作它们的正式上线时间线。
+
+![木质卡片盒保留多张空白索引卡，小人只搬出其中一张送向工作台](/images/uploads/2026-09-08-agent-graph-evolution-codex/residency.webp)
+
+*身份与记录可以保留，活动执行资源按需分配。*
+
+### 5.7 正在执行与驻留内存，是两种资源
+
+这是源码中很值得注意的一层。`AgentExecutionLimiter` 跟踪活动执行数量；执行守卫释放时会减少计数。V2 子 agent 启动工作前，会经过容量检查。[执行容量控制](https://github.com/openai/codex/blob/3f76e88a480f15258eab3512e7eafca77bbe80ee/codex-rs/core/src/agent/control/execution.rs#L13)
+
+另一个组件 `V2Residency` 管理加载中的实例。容量不足时，它会寻找可卸载候选，采用近似 LRU 的候选顺序。候选必须已完成、出错或被打断，同时没有活动回合、没有待处理邮箱消息；卸载流程会先确保执行记录已物化。[驻留管理](https://github.com/openai/codex/blob/3f76e88a480f15258eab3512e7eafca77bbe80ee/codex-rs/core/src/agent/control/residency.rs#L80)
+
+消息路径还会确保目标已加载，使符合条件的已卸载 agent 可以重新进入工作环境。[重新加载入口](https://github.com/openai/codex/blob/3f76e88a480f15258eab3512e7eafca77bbe80ee/codex-rs/core/src/agent/control/spawn.rs#L315)
+
+由此可以得出一个重要理解：**agent 的身份和记录可以继续存在，运行资源则按状态分配。** 曾经创建过多少 agent、此刻加载多少实例、此刻并发执行多少工作，不能简单看成同一个数字。
+
+这说明系统已在处理长期协作的资源生命周期。但仅凭这些代码，还不能推导出任意崩溃后整张协作图都能无损恢复，也不能推导出外部工具调用具有 exactly-once 语义。
+
+## 六、LangGraph 的实现重点：状态怎样推进和恢复
+
+Codex 的消息协作说明了参与者如何沟通。要理解显式图运行时，还需要看状态如何在节点之间推进。
+
+LangGraph 的运行时名为 Pregel，采用分步执行方式：先确定本步要运行的节点，再并行执行它们，最后更新通道。执行阶段写入的通道更新，到后续步骤才对节点可见。其名称和计算组织方式受到 Google Pregel 的启发。[LangGraph runtime](https://docs.langchain.com/oss/python/langgraph/pregel)、[Google Pregel 论文页](https://research.google/pubs/pregel-a-system-for-large-scale-graph-processing/)
+
+例如，分析节点同时派生两个检查分支。两个分支在同一批执行中工作，完成后提交更新，汇总节点再读取这些结果。汇总到底等待哪些分支，需要由图的边和汇合逻辑明确表达。
+
+多个节点可能同时更新状态中的同一个字段，因此还需要 reducer，也就是状态更新的合并规则。追加列表、按键更新映射、拒绝不允许的冲突，代表不同的数据语义。`Send` 可以为动态数量的下游任务提供各自输入，`Command` 则能把状态更新和路由决定结合起来。[Graph API](https://docs.langchain.com/oss/python/langgraph/graph-api)
+
+合并规则不应该只是“让程序不报错”。假如两个 agent 都修改同一份补丁文本，简单字符串相加虽然能产生一个值，却不能保证结果可用。更好的做法，是让它们返回带版本和来源的独立产物，再由明确的整合步骤处理。
+
+持久化方面，checkpointer 保存单个线程的图状态，store 保存跨线程的应用数据。检查点支持查看状态和恢复执行，但内存型保存器不会在进程重启后保留数据。[Persistence](https://docs.langchain.com/oss/python/langgraph/persistence)
+
+恢复也不等于外部副作用自动去重。一个节点在恢复时可能重新执行，模型调用也可能产生不同输出；涉及发邮件、提交订单或修改外部系统时，需要应用设计幂等操作或保存可复用的执行结果。[Checkpointers](https://docs.langchain.com/oss/python/langgraph/checkpointers)、[Interrupts](https://docs.langchain.com/oss/python/langgraph/interrupts)
+
+从这些机制可以看出，两类系统的侧重点：Codex V2 的这组接口围绕“有状态的参与者如何持续协作”；LangGraph 的核心接口围绕“程序化的状态与执行路径如何推进”。两者都能出现动态路由与循环，没有必要把它们排成简单的先进与落后。
+
+## 七、托管多 agent：Responses API 把哪些责任接过去了
+
+截至核查日，OpenAI 已公开 Responses Multi-agent Beta 文档。它提供托管协作动作，应用通过 `multi_agent.enabled` 启用，并用 Beta 标志选择相应协议。这里讨论的是 API 能力，不据此断言某个 Codex 客户端一定采用它作为底层。
+
+责任边界非常关键：托管的 `multi_agent_call` 由服务端执行；用户定义的 `function_call` 仍要由应用执行，并按 `call_id` 返回结果。HTTP 模式通过后续请求继续工作；WebSocket 模式可用 `response.inject` 把工具结果送入仍在进行的响应。应用还要处理注入确认与“响应已经完成”的竞态。[Responses Multi-agent](https://developers.openai.com/api/docs/guides/responses-multi-agent)
+
+这带来的工程变化，可以用一个例子理解。A 等待文件检索，B 等待测试，两个工具耗时不同。如果允许结果就绪后分别返回，较快的分支便有机会先恢复执行。收益仍取决于应用是否并行执行工具、是否及时回传，以及后续任务是否真的独立；连接方式本身不会消除业务依赖。
+
+同样，托管编排也不会自动解决产物冲突、错误结论或外部写入权限。应用减少的是自行实现协作调度的工作，仍需负责业务工具与最终验收。
+
+## 八、一个完整案例：修复登录偶发失败
+
+下面是结合前述机制构造的示例流程，用于解释设计思路，并非本次实际运行的任务记录。
+
+用户提出：“修复登录偶发失败，并说明原因。”主 agent 首先确定验收目标：能够复现问题，补丁针对真实原因，验证覆盖触发条件。
+
+接着，它给调查者 A 一项只读工作：查找请求链路和日志线索；给调查者 B 另一项只读工作：检查令牌刷新与并发行为。两者拿到共同的目标、代码版本，以及互不重叠的调查范围。
+
+A 发现失败集中在令牌刚刷新后的请求。它向 B 发送这条发现，同时把证据位置告知主 agent。B 不需要重新阅读 A 的全部日志，就能调整自己的调查方向。B 随后构造出旧令牌覆盖新令牌的时间顺序，并返回复现步骤。
+
+主 agent 此时决定由实现者 C 修改相关代码。C 完成后，验证者针对该版本运行复现和回归检查；审查者阅读补丁与测试证据。如有失败，主 agent 给 C 追加明确的修复任务，再验证新版本。
+
+[![登录故障从并行调查、实现补丁到指定版本验证的闭环](/images/uploads/2026-09-08-agent-graph-evolution-codex/03-investigate-verify.svg)](/images/uploads/2026-09-08-agent-graph-evolution-codex/03-investigate-verify.svg)
+
+*点击技术图可查看原尺寸。*
+
+真正让这张图可靠的，并非参与者数量，而是几个明确约定：调查与写入职责分开；消息包含证据；验证关联具体补丁版本；出现冲突时有人决策；完成条件来自可检查的结果。
+
+如果没有版本约束，验证者可能对旧补丁给出通过结论，而实现者已经修改了代码。通信越快，也不能弥补这种验收漏洞。
+
+## 九、图越复杂，越需要补齐的工程语义
+
+以下是从上述机制推导出的设计建议，不是声称 Codex 已经完整实现了这些保证。
+
+### 让消息带证据和任务上下文
+
+“应该修好了”信息量很低。更有用的报告至少说明：针对哪个任务、基于哪个版本、发现了什么、证据在哪里、还有什么未验证、建议谁做下一步。
+
+消息可以自然语言表达，但关键标识应稳定。任务 ID、补丁版本、测试输出位置，比大量重复的对话更有助于汇总和追踪。
+
+### 将信息、命令和授权分开
+
+某个 agent 发来“可以发布”的消息，并不自动获得发布权限。谁能调用外部工具、哪些操作需要用户授权，应由运行时或业务系统执行约束。协作者的判断是一份输入，不能自行提升权限。
+
+### 对共享文件设定写入责任
+
+共享工作目录能降低交换文件的成本，也容易引入覆盖和竞态。一个实用策略是让多个 agent 并行调查、审查和生成独立建议，由明确的写入者修改同一组文件。需要真正并行写入时，再按文件范围或独立 worktree 分离。
+
+这里的目标是降低资源争用，并保持产物来源清晰。文件可见性不等于内容一致性，更不等于所有 agent 都已经理解最新修改。
+
+### 对等待和反馈循环设置出口
+
+A 等 B，B 又等 A，可能造成协作停滞；审查与修复无限往返，则可能消耗预算而没有进展。任务需要说明等待什么、超时后怎么办、由谁裁决冲突，以及什么情况下停止追加尝试。
+
+这些规则可以由提示词表达，也可以部分写入代码。要求越严格的退出条件，越适合由可检查的程序状态保证。
+
+### 记录因果关系，而不只保存聊天
+
+一份有用的协作记录，应能回答：“这次修改由哪条发现触发，基于哪个版本，由哪个测试验证？”只有完整聊天而缺少任务、调用和产物关联，仍然很难定位错误。
+
+设计上可以记录 task ID、agent ID、message ID、tool call ID、artifact version 和父事件引用。它们共同组成因果记录，帮助区分模型判断错误、工具失败、消息延迟和验证过期。
+
+### 用最终效果评估，不按 agent 数量评估
+
+可以用一个粗略关系理解并行收益：
+
+`总耗时 ≈ 无法并行的工作 + 最慢的并行分支 + 协调与整合成本`
+
+这不是性能预测公式，只是提醒：增加分支主要缩短可并行部分，也会增加上下文传递、审查和整合成本。
+
+评估多 agent 是否值得，应同时看任务成功率、严重遗漏、墙钟时间、token 与工具成本、人工接管次数，以及共享产物冲突。比较时还应控制任务难度和预算。多个同类模型可能共享相同盲点，不能仅因“互相同意”就认定结论可靠。
+
+## 十、如何选择架构，以及什么才算前沿
+
+| 任务特征 | 通常值得优先考虑的方式 |
+| --- | --- |
+| 范围小，步骤紧密依赖 | 单 agent 循环 |
+| 流程稳定，有明确状态和验收关口 | 显式状态图 |
+| 存在可独立调查的未知问题 | 动态多 agent 委派与消息协作 |
+| 主 agent 必须维护统一用户答复 | 管理者调用专家，随后汇总 |
+| 某位专家应接管后续对话 | 明确的 handoff |
+| 要跨厂商、跨应用协作 | 在相应运行时之外评估 A2A 等互操作协议 |
+
+其中，“管理者调用专家”与“把控制权交给专家”是不同选择。OpenAI Agents SDK 文档将它们分别表达为 agents as tools 和 handoffs；区分的关键是后续用户答复由谁负责。[Orchestration and handoffs](https://developers.openai.com/api/docs/guides/agents/orchestration)
+
+上表是工程判断，不是产品排行榜。使用动态图的系统，仍可以在某些阶段坚持固定流程；使用状态图的系统，也可以让模型决定路由和动态分发任务。
+
+回到最初的问题：Codex 的这些能力算不算前沿 agent 工程？从公开实现看，有理由这样评价，但前沿性需要落在具体机制上。
+
+它已经把协作者变成了有身份、有上下文、能收消息、能追加工作的运行时实体；把普通信息与执行触发分开；把等待变成事件监听；把执行容量与实例驻留分别管理。模型的组织判断因此能够与软件系统的生命周期控制接在一起。
+
+这些机制没有取消 agent 的不确定性。它们提供了一套容纳和管理不确定性的基础设施。工程成熟度最终仍取决于系统能否在合理成本内交付可验证的结果，以及当模型判断失误、消息迟到或外部操作失败时，能否保持可理解、可干预和可恢复。
+
+**判断一个 agent 系统是否先进，最有价值的问题是：当参与者不一致、工具失败、任务中途改变时，它还能否正确地推进工作。** Graph 为这种推进提供表达和组织方式；清晰的状态、权限、证据和恢复语义，才让图真正成为可用的工程系统。
+
+## 附录：源码阅读路线与证据边界
+
+如果希望继续深入，可按下面的顺序阅读。所有源码链接固定到同一个提交，避免主分支变化造成行号和结论漂移。
+
+| 阅读目标 | 入口 |
+| --- | --- |
+| 六个 V2 协作工具如何组织 | [multi_agents_v2.rs](https://github.com/openai/codex/blob/3f76e88a480f15258eab3512e7eafca77bbe80ee/codex-rs/core/src/tools/handlers/multi_agents_v2.rs) |
+| 消息与后续任务的差别 | [message_tool.rs](https://github.com/openai/codex/blob/3f76e88a480f15258eab3512e7eafca77bbe80ee/codex-rs/core/src/tools/handlers/multi_agents_v2/message_tool.rs) |
+| 共享控制面与操作提交 | [agent/control.rs](https://github.com/openai/codex/blob/3f76e88a480f15258eab3512e7eafca77bbe80ee/codex-rs/core/src/agent/control.rs) |
+| 路径、实例与注册关系 | [agent_path.rs](https://github.com/openai/codex/blob/3f76e88a480f15258eab3512e7eafca77bbe80ee/codex-rs/protocol/src/agent_path.rs)、[registry.rs](https://github.com/openai/codex/blob/3f76e88a480f15258eab3512e7eafca77bbe80ee/codex-rs/core/src/agent/registry.rs) |
+| 消息排队与投递边界 | [session/input_queue.rs](https://github.com/openai/codex/blob/3f76e88a480f15258eab3512e7eafca77bbe80ee/codex-rs/core/src/session/input_queue.rs) |
+| 等待何时结束 | [multi_agents_v2/wait.rs](https://github.com/openai/codex/blob/3f76e88a480f15258eab3512e7eafca77bbe80ee/codex-rs/core/src/tools/handlers/multi_agents_v2/wait.rs) |
+| 创建与重新加载 | [agent/control/spawn.rs](https://github.com/openai/codex/blob/3f76e88a480f15258eab3512e7eafca77bbe80ee/codex-rs/core/src/agent/control/spawn.rs) |
+| 活动执行的容量管理 | [agent/control/execution.rs](https://github.com/openai/codex/blob/3f76e88a480f15258eab3512e7eafca77bbe80ee/codex-rs/core/src/agent/control/execution.rs) |
+| 空闲实例卸载与驻留管理 | [agent/control/residency.rs](https://github.com/openai/codex/blob/3f76e88a480f15258eab3512e7eafca77bbe80ee/codex-rs/core/src/agent/control/residency.rs) |
+
+本文确认的是这些公开接口、源码路径及相应文档所描述的行为。没有据此宣称 Codex 使用 LangGraph、内部消息采用 A2A、逻辑通信图等同于去中心化网络，也没有宣称系统提供全图事务、任意故障下的无损恢复或外部副作用的 exactly-once 保证。
+
+“动态通信图”“类似 Actor 的参与者模型”以及架构选择建议，属于本文对实现机制的分析，不是 OpenAI 对产品架构的正式命名。
