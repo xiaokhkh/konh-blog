@@ -351,6 +351,12 @@ input {
   line-height: 1.82;
 }
 
+.article-audio {
+  display: block;
+  width: 100%;
+  margin: 0.75em 0 1.5em;
+}
+
 .article-body h2,
 .article-body h3 {
   margin: 2.1em 0 0.75em;
