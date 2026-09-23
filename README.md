@@ -49,6 +49,17 @@ PUBLIC_GISCUS_CATEGORY=
 PUBLIC_GISCUS_CATEGORY_ID=
 ```
 
+## Selection speech
+
+The article text-selection panel uses ElevenLabs through `/api/selection-speech` when
+`ELEVENLABS_API_KEY` is set in the Vercel project's server-side environment. Keep the
+key out of `PUBLIC_` variables and client code. A key restricted to voice listing and
+text-to-speech, with a credit limit set in ElevenLabs, is recommended.
+
+Speech uses `eleven_multilingual_v2` for English and Chinese selections. Requests are
+limited to 500 characters and have a best-effort cap of 12 generations per IP per hour. If ElevenLabs is not
+configured or temporarily unavailable, the panel offers browser voices instead.
+
 ## CMS
 
 The optional CMS is available at `/admin/`. Update `public/admin/config.yml` with your GitHub repo before deploying.

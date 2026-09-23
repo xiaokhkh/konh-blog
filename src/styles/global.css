@@ -443,6 +443,14 @@ input {
   color: var(--ink);
 }
 
+.selection-translator-provider-note,
+.selection-translator-speech-status {
+  margin-top: 6px;
+  color: var(--faint);
+  font-size: 0.76rem;
+  line-height: 1.4;
+}
+
 .selection-translator-actions span {
   margin-right: auto;
   color: var(--faint);

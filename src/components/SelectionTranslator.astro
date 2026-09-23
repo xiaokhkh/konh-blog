@@ -8,6 +8,8 @@
     Voice
     <select data-voice aria-label="Voice for selected text"></select>
   </label>
+  <div class="selection-translator-provider-note" data-provider-note hidden>Selected text is sent to ElevenLabs when played.</div>
+  <div class="selection-translator-speech-status" data-speech-status role="status" hidden></div>
   <div class="selection-translator-result" data-result></div>
   <a data-fallback href="#" target="_blank" rel="noreferrer" hidden>Open in Google Translate</a>
 </div>
@@ -20,6 +22,8 @@
     const speakButton = panel?.querySelector('[data-speak]');
     const voiceRow = panel?.querySelector('[data-voice-row]');
     const voiceSelect = panel?.querySelector('[data-voice]');
+    const providerNote = panel?.querySelector('[data-provider-note]');
+    const speechStatus = panel?.querySelector('[data-speech-status]');
     const result = panel?.querySelector('[data-result]');
     const fallback = panel?.querySelector('[data-fallback]');
     const articleBody = document.querySelector('.article-body');
@@ -29,18 +33,34 @@
     let speechToken = 0;
     let speaking = false;
     let activeUtterance = null;
+    let speechController = null;
+    let activeAudio = null;
+    let audioUrl = '';
     const synthesizer = 'speechSynthesis' in window ? window.speechSynthesis : null;
     const preferredVoices = new Map();
+    let elevenVoices = [];
+    let elevenVoicesPromise = null;
 
-    if (!panel || !status || !closeButton || !speakButton || !voiceRow || !voiceSelect || !result || !fallback || !articleBody) return;
+    if (!panel || !status || !closeButton || !speakButton || !voiceRow || !voiceSelect || !providerNote || !speechStatus || !result || !fallback || !articleBody) return;
 
     const sourceLanguage = () => /[\u3400-\u9fff]/.test(selectedText) ? 'zh' : 'en';
+
+    const setSpeechStatus = (message) => {
+      speechStatus.textContent = message;
+      speechStatus.hidden = !message;
+    };
 
     const stopSpeech = () => {
       speechToken += 1;
       speaking = false;
       activeUtterance = null;
+      speechController?.abort();
+      speechController = null;
       synthesizer?.cancel();
+      activeAudio?.pause();
+      activeAudio = null;
+      if (audioUrl) URL.revokeObjectURL(audioUrl);
+      audioUrl = '';
       speakButton.textContent = 'Listen';
       speakButton.setAttribute('aria-label', 'Read selected text aloud');
     };
@@ -54,86 +74,140 @@
     };
 
     const updateVoices = () => {
-      if (!synthesizer || !selectedText) {
+      if (!selectedText) {
         voiceRow.hidden = true;
         return;
       }
 
       const language = sourceLanguage();
-      const voices = synthesizer.getVoices()
+      const browserVoices = (synthesizer?.getVoices() ?? [])
         .filter((voice) => voice.lang.toLowerCase().startsWith(language))
         .sort((a, b) => voiceScore(b, language) - voiceScore(a, language));
+      const cloudVoices = [...elevenVoices].sort((a, b) => {
+        const matches = (voice) => voice.languages.some((item) => item.toLowerCase().startsWith(language));
+        return Number(matches(b)) - Number(matches(a));
+      });
       const preferred = preferredVoices.get(language);
-      voiceSelect.replaceChildren(...voices.map((voice) => {
+      const cloudOptions = cloudVoices.map((voice) => {
         const option = document.createElement('option');
-        option.value = voice.voiceURI;
-        option.textContent = `${voice.name} (${voice.lang})`;
+        option.value = `eleven:${voice.id}`;
+        option.textContent = `${voice.name} · ElevenLabs`;
         return option;
-      }));
-      if (preferred && voices.some((voice) => voice.voiceURI === preferred)) voiceSelect.value = preferred;
-      voiceRow.hidden = voices.length < 2;
-    };
-
-    const splitSpeechText = (text) => {
-      const chunks = [];
-      let remaining = text;
-      while (remaining.length > 180) {
-        const windowText = remaining.slice(0, 180);
-        const lastBreak = Math.max(
-          windowText.lastIndexOf(' '), windowText.lastIndexOf('，'), windowText.lastIndexOf('。'),
-          windowText.lastIndexOf(','), windowText.lastIndexOf('.'),
-        );
-        const end = lastBreak > 90 ? lastBreak + 1 : 180;
-        chunks.push(remaining.slice(0, end).trim());
-        remaining = remaining.slice(end).trimStart();
+      });
+      const browserOptions = browserVoices.map((voice) => {
+        const option = document.createElement('option');
+        option.value = `browser:${voice.voiceURI}`;
+        option.textContent = `${voice.name} · Browser`;
+        return option;
+      });
+      if (synthesizer) {
+        const option = document.createElement('option');
+        option.value = 'browser:default';
+        option.textContent = 'System default · Browser';
+        browserOptions.push(option);
       }
-      if (remaining) chunks.push(remaining);
-      return chunks;
+      voiceSelect.replaceChildren(...cloudOptions, ...browserOptions);
+      if (preferred && [...cloudOptions, ...browserOptions].some((option) => option.value === preferred)) {
+        voiceSelect.value = preferred;
+      }
+      voiceRow.hidden = cloudOptions.length + browserOptions.length === 0;
+      providerNote.hidden = !voiceSelect.value.startsWith('eleven:');
+      if (!panel.hidden) speakButton.disabled = voiceSelect.options.length === 0;
     };
 
-    const speakSelection = () => {
-      if (!synthesizer || !selectedText) return;
-      if (speaking) {
+    const loadElevenVoices = () => {
+      if (!elevenVoicesPromise) {
+        elevenVoicesPromise = fetch('/api/selection-speech')
+          .then(async (response) => {
+            if (!response.ok) throw new Error('ElevenLabs unavailable');
+            const payload = await response.json();
+            elevenVoices = Array.isArray(payload.voices) ? payload.voices : [];
+            updateVoices();
+          })
+          .catch(() => {
+            elevenVoices = [];
+            updateVoices();
+          });
+      }
+      return elevenVoicesPromise;
+    };
+
+    const speakWithBrowser = (voiceValue, text) => {
+      if (!synthesizer) {
         stopSpeech();
+        setSpeechStatus('Speech is unavailable in this browser.');
         return;
       }
+      const token = speechToken;
+      const language = sourceLanguage();
+      const voice = synthesizer.getVoices().find((item) => item.voiceURI === voiceValue?.replace(/^browser:/, ''));
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = voice?.lang || (language === 'zh' ? 'zh-CN' : 'en-US');
+      if (voice) utterance.voice = voice;
+      utterance.rate = 0.95;
+      utterance.onend = () => {
+        if (token === speechToken && activeUtterance === utterance) stopSpeech();
+      };
+      utterance.onerror = () => {
+        if (token !== speechToken) return;
+        stopSpeech();
+        setSpeechStatus('Speech is unavailable.');
+      };
+      activeUtterance = utterance;
+      synthesizer.speak(utterance);
+    };
+
+    const speakSelection = async () => {
+      if (!selectedText) return;
+      if (speaking) return stopSpeech();
 
       stopSpeech();
+      setSpeechStatus('');
+      const text = selectedText.slice(0, 500);
+      const selectedVoice = voiceSelect.value;
       const token = speechToken;
-      const chunks = splitSpeechText(selectedText);
-      const language = sourceLanguage();
-      const voice = synthesizer.getVoices().find((item) => item.voiceURI === voiceSelect.value && item.lang.toLowerCase().startsWith(language));
-      let index = 0;
       speaking = true;
       speakButton.textContent = 'Stop';
       speakButton.setAttribute('aria-label', 'Stop reading');
+      if (!selectedVoice.startsWith('eleven:')) {
+        speakWithBrowser(selectedVoice, text);
+        return;
+      }
 
-      const speakNext = () => {
+      setSpeechStatus(selectedText.length > 500 ? 'Reading the first 500 characters.' : 'Generating speech…');
+      speechController = new AbortController();
+      try {
+        const response = await fetch('/api/selection-speech', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ text, voiceId: selectedVoice.slice(7) }),
+          signal: speechController.signal,
+        });
+        if (!response.ok) throw new Error('ElevenLabs unavailable');
+        const blob = await response.blob();
         if (token !== speechToken) return;
-        if (index >= chunks.length) {
-          stopSpeech();
-          return;
-        }
-        const utterance = new SpeechSynthesisUtterance(chunks[index++]);
-        utterance.lang = voice?.lang || (language === 'zh' ? 'zh-CN' : 'en-US');
-        if (voice) utterance.voice = voice;
-        utterance.rate = 0.95;
-        utterance.onend = () => {
-          if (activeUtterance === utterance) speakNext();
+        audioUrl = URL.createObjectURL(blob);
+        activeAudio = new Audio(audioUrl);
+        activeAudio.onended = () => {
+          if (token === speechToken) stopSpeech();
         };
-        utterance.onerror = () => {
-          if (token !== speechToken) return;
-          stopSpeech();
-          status.textContent = 'Speech unavailable';
-        };
-        activeUtterance = utterance;
-        synthesizer.speak(utterance);
-      };
-      speakNext();
+        await activeAudio.play();
+        if (token === speechToken) setSpeechStatus('');
+      } catch {
+        if (token !== speechToken) return;
+        stopSpeech();
+        setSpeechStatus('ElevenLabs unavailable; using browser voice.');
+        speaking = true;
+        speakButton.textContent = 'Stop';
+        speakButton.setAttribute('aria-label', 'Stop reading');
+        speakWithBrowser(null, text);
+      }
     };
 
     const hidePanel = () => {
       stopSpeech();
+      setSpeechStatus('');
+      providerNote.hidden = true;
       if (translateController) translateController.abort();
       window.clearTimeout(translateTimer);
       panel.hidden = true;
@@ -166,9 +240,13 @@
 
       selectedText = selection.text.slice(0, 1200);
       stopSpeech();
-      speakButton.disabled = !synthesizer;
-      speakButton.title = synthesizer ? '' : 'Speech is unavailable in this browser';
+      setSpeechStatus('');
+      speakButton.disabled = true;
+      speakButton.title = 'Reads up to 500 characters';
       updateVoices();
+      loadElevenVoices().then(() => {
+        if (!panel.hidden) speakButton.disabled = voiceSelect.options.length === 0;
+      });
       const rect = selection.range.getBoundingClientRect();
       panel.hidden = false;
       const panelWidth = panel.offsetWidth || 320;
@@ -232,7 +310,10 @@
     });
     window.addEventListener('scroll', hidePanel, { passive: true });
     synthesizer?.addEventListener('voiceschanged', updateVoices);
-    voiceSelect.addEventListener('change', () => preferredVoices.set(sourceLanguage(), voiceSelect.value));
+    voiceSelect.addEventListener('change', () => {
+      preferredVoices.set(sourceLanguage(), voiceSelect.value);
+      providerNote.hidden = !voiceSelect.value.startsWith('eleven:');
+    });
     speakButton.addEventListener('click', speakSelection);
     closeButton.addEventListener('click', hidePanel);
   })();
