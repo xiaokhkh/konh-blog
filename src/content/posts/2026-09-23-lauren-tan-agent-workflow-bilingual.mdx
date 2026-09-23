@@ -1,0 +1,1140 @@
+---
+title: "Lauren Tan（@poteto）谈 Agent 工作流：中英对照口播稿"
+description: "Lauren Tan 关于 Agent 验证、工具、代码库约束与工作流的约 38 分钟分享，中英对照整理。"
+pubDate: 2026-09-23
+tags:
+  - ai
+  - agents
+  - engineering
+  - transcript
+---
+
+原视频：[Lauren Tan 在 X 上的分享](https://x.com/poteto/status/2102050467505430555)（约 38 分钟）。下文按时间顺序整理英文口播及中文翻译，供对照阅读。英文为 ASR 校对稿，未逐帧核验；涉及工作经历、PR 数量和团队实践的内容均为讲者在视频中的陈述。
+
+---
+
+### [00:01–00:09]
+**EN** Hi, my name is Lauren. You might know me as poteto on X and I work on Grok Bot at SpaceX AI.
+
+**中文** 大家好，我叫 Lauren。你们可能在 X 上认识我——账号是 poteto——我在 SpaceX AI 做 Grok Bot。
+
+### [00:09–00:13]
+**EN** So last month, I did something pretty crazy.
+
+**中文** 上个月，我做了一件挺疯狂的事。
+
+### [00:13–00:18]
+**EN** I shipped 2,000 pull requests to production.
+
+**中文** 我往生产环境合并了大约 2,000 个 pull request（PR）。
+
+### [00:18–00:22]
+**EN** A lot of how I'm able to do this is through trust.
+
+**中文** 我能做到这些，很大程度上靠的是信任。
+
+### [00:23–00:32]
+**EN** And I think a lot about trust in terms of how I can trust my agents to produce high quality work even when I'm not there.
+
+**中文** 我经常想的是：怎样才能信任我的 agents，让它们在我不在场时也能产出高质量的工作。
+
+### [00:32–00:42]
+**EN** And my argument and thesis for this talk today is that if you set up your environment for your agents really, really well,
+
+**中文** 今天这场分享的核心论点是：如果你把 agents 的运行环境搭建得非常、非常好，
+
+### [00:42–00:48]
+**EN** you can end up with something that looks more like a personal or even team software factory,
+
+**中文** 你最终会得到某种更像个人、甚至团队级「软件工厂」的东西，
+
+### [00:49–00:56]
+**EN** where you're producing very high quality code at much greater rates than before.
+
+**中文** 能以远高于以往的速度产出非常高质量的代码。
+
+### [00:56–01:00]
+**EN** But I'm not a fan of the term software factory.
+
+**中文** 不过我其实不太喜欢「软件工厂」这个说法。
+
+### [01:00–01:09]
+**EN** I like the analogy of the Michelin kitchen better where, you know, as technologists, we're not really producing,
+
+**中文** 我更喜欢米其林厨房这个比喻——作为技术人员，我们并不是在
+
+### [01:09–01:12]
+**EN** we're not mass producing a product on an assembly line.
+
+**中文** 流水线上大规模量产某个产品。
+
+### [01:12–01:21]
+**EN** But the work that we do looks very creative. It's very, you know, it's the act of building a product and it's art in some sense.
+
+**中文** 我们的工作更有创造性。某种意义上，做产品本身就像在做艺术。
+
+### [01:21–01:30]
+**EN** So, you know, even though with agents we're not cooking the individual components that go into the product anymore,
+
+**中文** 所以，即便有了 agents，我们不再亲自「炒」产品里的每一个小零件，
+
+### [01:32–01:39]
+**EN** we're still responsible for the final outcome and thinking about our kitchen setup, right?
+
+**中文** 我们仍然要对最终结果负责，并且要想清楚厨房怎么布置，对吧？
+
+### [01:39–01:45]
+**EN** Because depending on how you set up your line cooks, your sous chefs, you know, the kind of equipment they have,
+
+**中文** 因为你怎么安排档口厨师、副厨，他们有什么设备，
+
+### [01:45–01:53]
+**EN** the kind of training they have, you know, dishwashers and the ratio, I guess, of line cooks to dishwashers,
+
+**中文** 受过什么训练，洗碗工有多少，以及档口厨师和洗碗工的比例，
+
+### [01:53–01:58]
+**EN** all of these ingredients go into making the final product.
+
+**中文** 所有这些「配料」都会决定最终出品。
+
+### [01:58–02:02]
+**EN** And I think this analogy is really apt.
+
+**中文** 我觉得这个比喻特别贴切。
+
+### [02:02–02:15]
+**EN** So, I wanted to talk a little bit about a story before we begin where six months ago when I first joined Cursor before we were a part of SpaceX AI,
+
+**中文** 开始之前我想先讲个小故事：六个月前我刚加入 Cursor——那时我们还没并入 SpaceX AI——
+
+### [02:15–02:20]
+**EN** I obviously had, you know, no agent skills to use.
+
+**中文** 我手头显然还没有任何可用的 agent skills。
+
+### [02:20–02:27]
+**EN** Right, I just joined the company. It was a fresh codebase and a fresh product that I was working on.
+
+**中文** 对，我刚进公司，面对的是全新的代码库和全新的产品。
+
+### [02:28–02:37]
+**EN** So, at the time, Cursor was building the replacement for the Cursor IDE, which is the new Agents Window.
+
+**中文** 当时 Cursor 正在做 Cursor IDE 的替代品，也就是新的 Agents Window。
+
+### [02:37–02:44]
+**EN** And before I joined, the Cursor Agents Window had quite a lot of performance issues.
+
+**中文** 在我加入之前，Cursor Agents Window 有不少性能问题。
+
+### [02:44–02:49]
+**EN** And my manager at the time asked if I was able to help them.
+
+**中文** 当时我的经理问我能不能帮忙。
+
+### [02:49–02:56]
+**EN** And since I had spent some time on the React team before I joined Cursor, it seemed like a good fit.
+
+**中文** 而我加入 Cursor 之前在 React 团队待过一段时间，感觉挺合适。
+
+### [02:57–03:03]
+**EN** But when I first started, I quickly realized how manual this process was.
+
+**中文** 但我刚上手就很快意识到，这个过程有多手工。
+
+### [03:03–03:10]
+**EN** Obviously, I have done performance work before, but at the rate at which pull requests were being landed,
+
+**中文** 我以前也做过性能优化，但以当时 PR 合入的速度，
+
+### [03:10–03:17]
+**EN** it was just, it felt almost an insurmountable wall of pull requests that just kept coming in.
+
+**中文** 感觉像一堵几乎不可逾越的 PR 墙，还在不断涌进来。
+
+### [03:17–03:22]
+**EN** And I had no idea whether or not the performance of the app would be regressing.
+
+**中文** 而且我根本不知道应用性能会不会在回退。
+
+### [03:23–03:37]
+**EN** Right, so a lot of my early time on the Cursor team was spent looking at Chrome DevTools and doing performance traces and taking heap snapshots.
+
+**中文** 所以我在 Cursor 团队早期很多时间，都花在看 Chrome DevTools、做性能追踪、拍 heap snapshot（堆快照）上。
+
+### [03:37–03:41]
+**EN** And it was extremely manual.
+
+**中文** 而且极其手工。
+
+### [03:41–03:51]
+**EN** It was so manual, it got to the point where I just got really frustrated and started to think about, you know, wait, we have agents, what am I doing?
+
+**中文** 手工到让我特别沮丧，然后开始想：等等，我们有 agents 啊，我在干嘛？
+
+### [03:52–04:01]
+**EN** And so I started thinking about verification skills where, you know, what if my agent could actually run the application itself
+
+**中文** 于是我开始想 verification skills（验证技能）：要是我的 agent 能自己把应用跑起来，
+
+### [04:01–04:13]
+**EN** and take the traces for me, understand traces and find the hotspots and basically hill-climb, you know, to better performance in our application automatically.
+
+**中文** 帮我抓 trace、理解 trace、找到热点，然后基本上通过 hill-climbing 自动把应用性能往上推，会怎样。
+
+### [04:14–04:23]
+**EN** And throughout the last six months of being at Cursor and SpaceX AI, you can really see that my productivity has skyrocketed.
+
+**中文** 过去六个月在 Cursor 和 SpaceX AI，你能明显看到我的生产力飙升。
+
+### [04:23–04:31]
+**EN** And, you know, I never set out to ship 2,000 pull requests a month. That was not a goal of mine at all.
+
+**中文** 而且我从来没把「一个月合 2,000 个 PR」当目标——完全不是。
+
+### [04:31–04:42]
+**EN** But I realized that all of the skills, all of the tools and codebase changes I was making, laddered up to this idea of trust.
+
+**中文** 但我意识到，我做的所有 skills、工具和代码库改动，最终都通向「信任」这个主题。
+
+### [04:42–04:51]
+**EN** You know, I didn't know it at the time, but I had this thought in the back of my head, which was, you know, I am the bottleneck.
+
+**中文** 当时我还没完全意识到，但脑海里一直有个想法：我自己才是瓶颈。
+
+### [04:51–05:04]
+**EN** And I need to be able to take all of the knowledge that I have as an engineer and impart it into my team of agents so that I didn't need to be the blocker for everything.
+
+**中文** 我需要把作为工程师积累的知识传授给我的 agent 团队，这样我就不必事事挡在中间。
+
+### [05:04–05:11]
+**EN** And you can clearly see that it's paid off.
+
+**中文** 而且效果明显已经兑现了。
+
+### [05:11–05:17]
+**EN** So I think it really comes down to trust.
+
+**中文** 所以我觉得，关键就落在信任上。
+
+### [05:17–05:20]
+**EN** But how exactly do you build that trust?
+
+**中文** 但信任究竟怎么建？
+
+### [05:20–05:27]
+**EN** And where do you start if you are, you know, wherever you are in your journey of using agents?
+
+**中文** 无论你现在用 agents 走到哪一步，该从哪里开始？
+
+### [05:27–05:40]
+**EN** So when I started, obviously I was in this category, you know, the one-to-one to five range where you still feel like you have to babysit every chat
+
+**中文** 我刚开始时显然处在这个阶段：大概一对一到一对五，你还觉得必须盯着每一次对话，
+
+### [05:40–05:51]
+**EN** and conversation. And you're just constantly course-correcting, you know, you're intervening, you're correcting your agent so that it does the right thing.
+
+**中文** 不断地纠偏——干预、纠正你的 agent，好让它做对的事。
+
+### [05:51–05:59]
+**EN** And if you're not there, basically nothing happens and the agents do the wrong thing.
+
+**中文** 人不在，基本上什么都推进不了，agents 还会做错。
+
+### [05:59–06:11]
+**EN** And I would actually argue that this part, this phase of, you know, using agents is actually the hardest to get out of because it's not always very clear how exactly you get out of it.
+
+**中文** 我甚至觉得，用 agents 的这个阶段最难跳出去，因为往往不清楚该怎么跳出去。
+
+### [06:11–06:15]
+**EN** And again, it just comes down to trust.
+
+**中文** 而归根结底，还是信任。
+
+### [06:15–06:27]
+**EN** You know, the reason you're unable to go from one-to-one or one-to-five agents to something more like 100 is because you don't have trust in your agents' work yet.
+
+**中文** 你没法从一对一或一对五扩到接近一百个 agents，就是因为你还不信任它们的产出。
+
+### [06:27–06:42]
+**EN** So if you don't have trust and you try to spawn 100 sub-agents or cloud agents, you're going to quickly find that you're just going to get a ton of slop PRs and, you know, a bunch of regressions and a bunch of bugs shipped and no one's going to be very happy with that.
+
+**中文** 如果没有信任就硬拉起 100 个子 agent 或 cloud agents，你会很快发现：一堆 slop PR（灌水/低质 PR）、一堆回归、一堆 bug 上线，谁都不高兴。
+
+### [06:42–06:50]
+**EN** So that begs the question, how do you trust your agents more?
+
+**中文** 于是问题来了：怎样才能更信任你的 agents？
+
+### [06:50–07:05]
+**EN** So for me, it came, it really started when I, like I said, I joined the Cursor team, and I was starting to work on performance where I realized the need for verification.
+
+**中文** 对我来说，真正的起点就是加入 Cursor 团队做性能时——我意识到需要 verification（验证）。
+
+### [07:05–07:10]
+**EN** So when I say verification, there are sort of levels to that.
+
+**中文** 我说的 verification，其实是有层次的。
+
+### [07:11–07:30]
+**EN** Because, you know, on the, I guess the lower end of the scale for verification, you have things like the verification skills that I talk about where you teach your agent how to run your application, you know, and use things like the Chrome DevTools Protocol, or whatever
+
+**中文** 在验证光谱偏「低」的一端，就是我说的那些 verification skills：教 agent 怎么跑你的应用，用 Chrome DevTools Protocol，或其他
+
+### [07:30–07:43]
+**EN** protocol that you have for debugging and teach them how to, you know, debug the application, take performance traces, take heap snapshots and so on.
+
+**中文** 调试协议，教它们调试应用、抓性能 trace、拍 heap snapshot 等等。
+
+### [07:43–07:59]
+**EN** And then on the opposite end of the spectrum, which is much, much harder and still very much an open question, is like more formal verification where, you know, maybe you rely on formal methods or, you know, a language
+
+**中文** 光谱另一端难得多，而且仍然是开放问题：更形式化的验证——比如依赖 formal methods，或某种语言，
+
+### [07:59–08:16]
+**EN** that's like Lean or TLA+ to do, you know, verification so that you can check that, you know, your business-level or business logic invariants are, you know, always true.
+
+**中文** 像 Lean 或 TLA+，用来验证业务层或业务逻辑的不变量是否始终成立。
+
+### [08:16–08:24]
+**EN** And that you can formally verify that your application is always in a correct state.
+
+**中文** 从而形式化证明应用始终处于正确状态。
+
+### [08:24–08:37]
+**EN** But I would say that, you know, even if you don't have the ability to run formal methods—and very few people really do—that with verification skills, you can get very far.
+
+**中文** 但我想说，即便你用不了 formal methods——真正能用的人也很少——单靠 verification skills，也能走得很远。
+
+### [08:37–08:53]
+**EN** So when I joined Cursor and started to work on the Cursor Agents Window, the first skill that I built was the skill called Control Glass, which is a verification skill that teaches the agent how to run the application and take traces like
+
+**中文** 我加入 Cursor 开始做 Agents Window 时，做的第一个 skill 叫 Control Glass：一个 verification skill，教 agent 如何跑应用并抓 trace，就像
+
+### [08:53–08:59]
+**EN** I mentioned, and it does that through the Chrome DevTools Protocol.
+
+**中文** 我前面说的那样，它通过 Chrome DevTools Protocol 来做。
+
+### [08:59–09:10]
+**EN** Something interesting about that skill is, and I kind of iterated my way to this. It didn't start out this way.
+
+**中文** 这个 skill 有个有意思的地方——我也是迭代出来的，一开始并不是这样。
+
+### [09:10–09:19]
+**EN** But the Control Glass verification skill really has two components to it.
+
+**中文** 但 Control Glass 这个 verification skill 其实有两个组成部分。
+
+### [09:20–09:41]
+**EN** The first part is obviously a CLI. So you want your agents to be able to reproducibly run the application and collect traces and collect evidence—you know, empirical evidence—that, you know, code is working, that your performance bar is being met.
+
+**中文** 第一部分显然是 CLI。你希望 agents 能可复现地跑应用、收集 traces 和实证证据：代码在工作、性能门槛被满足。
+
+### [09:41–09:58]
+**EN** And rather than have your agents create scripts every time, you know, that can differ between agent sessions, you can actually create a CLI that's within the skill directory, and then your agents will just use that every time.
+
+**中文** 与其让 agents 每次自己写脚本——会话之间还容易不一致——不如在 skill 目录里放一个 CLI，让 agents 每次都用它。
+
+### [09:58–10:16]
+**EN** And then, of course, you need to actually invest in it and make it good so that it can handle all sorts of different use cases and be able to, you know, run the application correctly.
+
+**中文** 当然你还得持续投入、把它做扎实，才能覆盖各种用例，并正确跑起应用。
+
+### [10:16–10:22]
+**EN** Another thing that's also really important is this idea of a Feature Map.
+
+**中文** 另一件很重要的事，是 Feature Map（功能地图）这个概念。
+
+### [10:22–10:33]
+**EN** So a Feature Map really is something that I kind of coined, I guess, where, you know, we started using these Control Glass skills within Cursor.
+
+**中文** Feature Map 算是我起的名字。我们开始在 Cursor 里用这些 Control Glass skills，
+
+### [10:33–10:45]
+**EN** Then we quickly realized that, you know, a Slack report would come in and a user would post a very vague screenshot, right, like a very small slice of the UI and just like three question marks.
+
+**中文** 很快发现：Slack 里会来一条反馈，用户贴一张很模糊的截图——UI 的一小块，再加三个问号。
+
+### [10:45–10:54]
+**EN** And the agents using our Control Glass skills had just no idea. Like it could run the application, but it was just guessing at what exactly the user meant.
+
+**中文** 用我们 Control Glass skills 的 agents 完全没头绪：它能跑应用，但对用户到底指什么只是在猜。
+
+### [10:54–11:03]
+**EN** And so I had this idea to create something called a Feature Map, which is, I guess, kind of inspired by like a sitemap.
+
+**中文** 于是我想做个叫 Feature Map 的东西，灵感有点像站点地图（sitemap）。
+
+### [11:03–11:15]
+**EN** It essentially is a form of materialized memory, you know, like how exactly does your application work? What features does it have? How does a user reach it?
+
+**中文** 本质上它是一种物化记忆：你的应用到底怎么工作？有哪些功能？用户怎么到达？
+
+### [11:15–11:25]
+**EN** You know, in terms of keyboard shortcuts or what DOM elements to click on, you know, things like that and what all the different features do.
+
+**中文** 比如快捷键、要点哪些 DOM 元素，以及各个功能各自做什么。
+
+### [11:26–11:35]
+**EN** And this Feature Map is stored in the skill itself in the codebase as part of the skill directory.
+
+**中文** 这个 Feature Map 就存在 skill 里，作为代码库中 skill 目录的一部分。
+
+### [11:35–11:41]
+**EN** And we have an automation that maintains this Feature Map as well.
+
+**中文** 我们还有自动化来维护这份 Feature Map。
+
+### [11:41–11:54]
+**EN** But when we combine the CLI and the Feature Map, we quickly realized that this combination was very, very powerful because now agents can not only, you know, reproducibly control the application and take traces,
+
+**中文** 但把 CLI 和 Feature Map 合在一起时，我们很快发现这个组合非常、非常强：agents 既能可复现地操控应用并抓 traces，
+
+### [11:54–12:03]
+**EN** but it could also understand requests that came in from internal users as well as external users.
+
+**中文** 也能理解来自内部用户和外部用户的请求。
+
+### [12:03–12:18]
+**EN** And so we very quickly realized that the Control Glass verification skills were so useful that they've become more or less critical infrastructure for our team and we constantly maintain it.
+
+**中文** 我们很快意识到 Control Glass verification skills 太有用了，几乎成了团队的关键基础设施，而且我们持续维护它。
+
+### [12:18–12:24]
+**EN** But the ability for an agent to verify its own work is extremely powerful.
+
+**中文** agent 能验证自己的工作，这件事本身就极其强大。
+
+### [12:24–12:33]
+**EN** And we have spent a lot of time on this skill and it's very, very powerful for building that trust.
+
+**中文** 我们在这个 skill 上投入了很多时间，它对建立信任非常、非常有帮助。
+
+### [12:33–12:42]
+**EN** In addition to verification, of course, you want—because verification is really about correctness.
+
+**中文** 除了 verification，当然还有别的——因为 verification 本质上关乎正确性。
+
+### [12:43–12:51]
+**EN** Correctness to me is really about: does the thing—does the feature or code—do the thing that you want it to do.
+
+**中文** 对我来说，正确性就是：这个功能或代码，是不是在做你想让它做的事。
+
+### [12:51–12:57]
+**EN** Right, like does the, you know, the checkout button, does it actually check out the cart.
+
+**中文** 比如结账按钮，是不是真的把购物车结账了。
+
+### [12:57–13:04]
+**EN** Verification is really important for that because you can get empirical evidence that this feature actually works.
+
+**中文** 对此 verification 很重要，因为你能拿到「这个功能确实能用」的实证证据。
+
+### [13:04–13:12]
+**EN** But it doesn't tell you much about, you know, the performance or the code quality of that feature.
+
+**中文** 但它不太能告诉你这个功能的性能或代码质量如何。
+
+### [13:12–13:18]
+**EN** And that's where you start thinking about skills that teach agents to work like real software engineers.
+
+**中文** 这时你就要开始想：怎样用 skills 教 agents 像真正的软件工程师那样工作。
+
+### [13:18–13:24]
+**EN** So I've built a plugin called P-Stack.
+
+**中文** 于是我做了一个叫 P-Stack 的插件。
+
+### [13:24–13:32]
+**EN** I'm not going to talk about the plugin too much today, but a lot of inspiration for that plugin,
+
+**中文** 今天我不会细讲这个插件，但它的很多灵感，
+
+### [13:32–13:41]
+**EN** which is a collection of skills that I've created, are inspired by the kind of workflows that I personally have used
+
+**中文** ——它是我做的一组 skills——来自我个人在软件工程里用过的工作流，
+
+### [13:41–13:47]
+**EN** in my time doing software engineering for all sorts of different types of tasks.
+
+**中文** 覆盖各种各样的任务类型。
+
+### [13:47–13:52]
+**EN** So debugging, you know, feature development, prototyping.
+
+**中文** 比如调试、功能开发、原型。
+
+### [13:52–14:01]
+**EN** There's a whole bunch of different playbooks and skills that ship in P-Stack that teach your agents how to write code the way that you want them to.
+
+**中文** P-Stack 里有一整套 playbooks 和 skills，教你的 agents 按你想要的方式写代码。
+
+### [14:01–14:16]
+**EN** And, you know, this is where, you know, the more experienced engineers on your team can really contribute to set up a team repository of skills that just make your agents a lot smarter.
+
+**中文** 这也是团队里更有经验的工程师可以真正贡献的地方：建一个团队级 skills 仓库，让 agents 聪明得多。
+
+### [14:16–14:30]
+**EN** And when you combine those skills with verification skills, then you are able to get to the point where your agents are able to not just verify that the work that they're doing is correct,
+
+**中文** 把这些 skills 和 verification skills 结合起来，你就能走到这一步：agents 不仅能验证自己做的活是正确的，
+
+### [14:30–14:39]
+**EN** but that it is also high quality. And again, because of verification, you can collect real performance metrics.
+
+**中文** 而且质量也高。同样因为有 verification，你能收集真实的性能指标。
+
+### [14:39–14:50]
+**EN** You can get real numbers and statistics and telemetry on the performance of the application.
+
+**中文** 你能拿到关于应用性能的真实数字、统计和遥测。
+
+### [14:50–14:56]
+**EN** So I think that's a really important part to invest in.
+
+**中文** 所以我认为这是非常值得投入的一块。
+
+### [14:56–15:04]
+**EN** Another thing I think is really important is refactoring and rewriting your architecture to be more agent-friendly.
+
+**中文** 另一件我认为很重要的事，是重构、改写架构，让它更 agent-friendly（对 agent 友好）。
+
+### [15:04–15:13]
+**EN** And I almost want to say that this is one of the most important things you can do as a software engineering team,
+
+**中文** 我几乎想说，对软件工程团队而言，这是你能做的最重要的事之一，
+
+### [15:13–15:20]
+**EN** because if you really truly believe that agents are going to be writing all the code in the future,
+
+**中文** 因为如果你真心相信未来代码会主要由 agents 来写，
+
+### [15:20–15:26]
+**EN** then we need to design our codebases so that they do the right thing by default.
+
+**中文** 那我们就要把代码库设计成：默认就会做对的事。
+
+### [15:26–15:39]
+**EN** And you'll find that there's this, I'm just going to say like a scale or continuum between, you know, these different pieces of building trust in your agents,
+
+**中文** 你会发现，在建立对 agents 的信任这件事上，有一条尺度或连续谱，
+
+### [15:39–15:50]
+**EN** where I have like five of these points here where the codebase is really like the best form of memory,
+
+**中文** 我这里列了大概五个点——其中代码库其实是最好的一种记忆形式，
+
+### [15:50–15:56]
+**EN** because agents love to extend existing patterns that they see.
+
+**中文** 因为 agents 特别喜欢沿着它们看到的现有模式往上延伸。
+
+### [15:56–16:07]
+**EN** And I think this is just the nature of how LLMs work, where they're more likely to use whatever it is in their context window
+
+**中文** 我觉得这就是 LLM 的本性：它们更倾向于用上下文窗口里已有的东西
+
+### [16:07–16:16]
+**EN** to make changes. And of course, the files that the agents read and open are part of its context window.
+
+**中文** 来做改动。而 agents 读开的文件，当然也是上下文窗口的一部分。
+
+### [16:16–16:26]
+**EN** And therefore the codebase is a really important part of that, because, you know, agents aren't going to just refactor your code in every single PR.
+
+**中文** 所以代码库非常关键——agents 不会在每一个 PR 里都重构你的代码。
+
+### [16:26–16:29]
+**EN** They're going to just look at what's already there and just extend.
+
+**中文** 它们会看已经有什么，然后直接延伸。
+
+### [16:29–16:41]
+**EN** The next level I think is about static analysis where you have linters, you have compiler diagnostics, you have continuous integration.
+
+**中文** 下一层我认为是静态分析：有 linter、有编译器诊断、有持续集成（CI）。
+
+### [16:41–16:50]
+**EN** And these are guidelines and constraints that you can enforce in your codebase so that whenever you correct your agent,
+
+**中文** 这些是你可以在代码库里强制执行的指南和约束——当你纠正 agent 时，
+
+### [16:50–16:55]
+**EN** you find that, you know, they just keep making the same mistake.
+
+**中文** 如果发现它们老犯同一个错，
+
+### [16:55–17:06]
+**EN** You can add those as lint rules, or even better, you can refactor your codebase so that the mistake that the agent is making becomes categorically impossible.
+
+**中文** 你可以把它加成 lint 规则；更好的是，重构代码库，让那个错误在类别上变得不可能发生。
+
+### [17:06–17:18]
+**EN** And then a step above that, right, where, and this is where we're starting to get more into less of like a hard constraint and enforcement and more into the realm of guidance.
+
+**中文** 再上一层，我们就从硬性约束和强制，更多进入「引导」的领域。
+
+### [17:18–17:29]
+**EN** You have things like rules, you have Bugbot, you have skills, which, you know, your agents will obviously sometimes and mostly use when they're doing their work,
+
+**中文** 比如 rules、Bugbot、skills——agents 做活时通常、大多会用到，
+
+### [17:29–17:40]
+**EN** but there's also a chance that it might, for various reasons, you know, forget to read a rule or maybe the user that is piloting the agent ignores them.
+
+**中文** 但也有可能因为各种原因忘了读某条 rule，或者驾驶 agent 的人直接忽略它们。
+
+### [17:40–17:52]
+**EN** So these aren't quite as enforceable, but also an important part of setting up your environment so that you can really trust what your agents are doing.
+
+**中文** 所以它们没那么「可强制」，但仍是搭建环境、真正信任 agents 产出的重要一环。
+
+### [17:52–17:59]
+**EN** And then finally you have a style guide, which is really only enforceable by humans in a code review.
+
+**中文** 最后是 style guide（风格指南），基本上只能靠人在 code review 里执行。
+
+### [17:59–18:04]
+**EN** I guess you could put these in your rules and Bugbot and skills as well.
+
+**中文** 当然你也可以把它们写进 rules、Bugbot 和 skills。
+
+### [18:04–18:17]
+**EN** But if you don't, then you have this big glaring hole in your review process where now humans have to, you know, look at every single line that's being changed and remember to comment.
+
+**中文** 但如果不做，评审流程里就会有一个巨大漏洞：人类得盯每一行改动，还得记得去评论。
+
+### [18:17–18:23]
+**EN** And with the rate of pull requests that are coming in, it just, it just becomes impossible.
+
+**中文** 以现在 PR 涌入的速度，这根本做不到。
+
+### [18:23–18:27]
+**EN** So I definitely wouldn't recommend, you know, relying only on the style guide.
+
+**中文** 所以我绝对不建议只依赖 style guide。
+
+### [18:27–18:33]
+**EN** I think the style guide or, you know, like looking at human reviews is a good place to start
+
+**中文** 我认为 style guide，或者说看人的 review，是个不错的起点——
+
+### [18:33–18:41]
+**EN** in terms of what's missing, but you should really invest the time to think about the other four parts.
+
+**中文** 用来发现缺什么——但你真该花时间把另外四块也想清楚。
+
+### [18:41–18:57]
+**EN** You know, your codebase, making things categorically impossible through better data structures or algorithms, static analysis, and then of course you layer that with rules and Bugbot and skills.
+
+**中文** 也就是：代码库——用更好的数据结构或算法让错误在类别上不可能；静态分析；再叠上 rules、Bugbot 和 skills。
+
+### [18:57–19:13]
+**EN** On the codebase front, and in the Grok Bot codebase, we actually have invested into setting something up that we call Dune, which is our agent-friendly framework.
+
+**中文** 在代码库这一侧，在 Grok Bot 的代码库里，我们投入做了一个叫 Dune 的东西——我们的 agent-friendly 框架。
+
+### [19:13–19:23]
+**EN** So the inspiration for Dune really came about from a lot of the performance issues we were seeing in the Cursor Agents Window.
+
+**中文** Dune 的灵感，很大程度上来自我们在 Cursor Agents Window 里看到的大量性能问题。
+
+### [19:23–19:27]
+**EN** And so a lot of lessons came out of that exploration.
+
+**中文** 那次探索也沉淀出很多教训。
+
+### [19:27–19:36]
+**EN** But the key principle that we landed on is really that agents love taking shortcuts.
+
+**中文** 但我们落下来的核心原则是：agents 特别爱走捷径。
+
+### [19:36–19:52]
+**EN** So what if we designed a framework such that the shortcut, you know, the easy path is the right path for agents—and also one that would be a codebase that is, you know, maybe pretty annoying for humans to work in
+
+**中文** 那如果我们设计一个框架，让捷径——也就是容易走的路——对 agents 来说就是正确的路？这个代码库对人类来说可能挺烦人，
+
+### [19:52–19:56]
+**EN** because it's so locked down in terms of what you can do and what you can't do.
+
+**中文** 因为能做什么、不能做什么被锁得很死。
+
+### [19:56–20:08]
+**EN** But it actually creates the perfect environment for agents, especially ones that have very minimal context because, you know, not every contributor to your codebase is going to be an engineer anymore.
+
+**中文** 但它其实给 agents——尤其是上下文很少的那些——创造了完美环境，因为以后代码库贡献者不一定都是工程师。
+
+### [20:08–20:16]
+**EN** You can have designers, you can have product managers, you can have CEOs, you know, going into the codebase and shipping features.
+
+**中文** 设计师、产品经理、CEO 都可能进代码库去合功能。
+
+### [20:16–20:31]
+**EN** So we want to really think a lot about how we invest and set up our codebases so that, you know, even agents that are piloted by busy people with not a lot of context can do a good job by default.
+
+**中文** 所以我们要认真想：如何投入、如何搭建代码库，让即便是被很忙、上下文很少的人驾驶的 agents，默认也能干好。
+
+### [20:31–20:43]
+**EN** And like I mentioned before, your codebase is really a form of memory for agents because they love to extend the existing patterns that they see.
+
+**中文** 就像我前面说的，代码库对 agents 来说就是一种记忆，因为它们爱延伸看到的现有模式。
+
+### [20:43–20:57]
+**EN** And the reverse is actually also true. Right. You can invest the time to set up your codebase in a way that things are, you know, bad patterns are categorically impossible, or you have like lint rules that prevent them.
+
+**中文** 反过来也成立。你可以花时间把代码库搭成：坏模式在类别上不可能，或者用 lint 规则拦住它们。
+
+### [20:57–21:16]
+**EN** But the reverse is also true in the sense that if you have existing anti-patterns, you will actually find that these will spread kind of like a virus where you have like one small workaround or a comment that explains a workaround.
+
+**中文** 但反面同样成立：如果已有反模式，它们会像病毒一样扩散——一个小 workaround，或一段解释 workaround 的注释，
+
+### [21:17–21:32]
+**EN** And you'll quickly find that agents just love to copy that. And then in a matter of a few days or a few weeks, you'll find that the workaround has spread everywhere and it has become like a de facto pattern for all agents.
+
+**中文** 你会很快发现 agents 特别爱复制它。几天或几周后，这个 workaround 到处都是，成了所有 agents 的事实标准。
+
+### [21:32–21:35]
+**EN** And that's a really, really bad place to be in.
+
+**中文** 那是一个非常、非常糟糕的处境。
+
+### [21:35–21:57]
+**EN** And that goes back to what I was saying about why it's really important, you know, whenever you're correcting your agents, that you invest the time into thinking about codebase changes and static analysis too—and of course, layering them with rules, good rules and Bugbot and skills—because of that reason.
+
+**中文** 这也回到我前面说的：每当你纠正 agents 时，为什么要投入时间想代码库改动和静态分析——当然还要叠上好的 rules、Bugbot 和 skills——原因就在这里。
+
+### [21:58–22:19]
+**EN** And another analogy that I like in addition to the Michelin kitchen is this idea that, you know, your codebase is kind of like a garden where you have workarounds that seem kind of innocent at first, then because of the nature of agents they just copy that pattern over and over again.
+
+**中文** 除了米其林厨房，我还喜欢另一个比喻：代码库像一座花园——一开始看起来无害的 workaround，因为 agents 的本性会被一遍遍复制。
+
+### [22:20–22:32]
+**EN** And you quickly end up with a very, you know, vibe-coded codebase that is, you know, a pain in the butt to maintain and has a lot of performance issues.
+
+**中文** 很快你就得到一个高度「vibe-coded」的代码库——维护痛苦，性能问题一堆。
+
+### [22:32–22:42]
+**EN** So in my opinion, the perfect agent codebase is one that's so locked down that, you know, it's again, it's like really annoying for humans to write code in.
+
+**中文** 所以在我看来，完美的 agent 代码库是锁得特别死的——对人类写代码来说又很烦人。
+
+### [22:42–22:51]
+**EN** But it's so conventional. It's so standardized that, you know, even innocent-looking bad patterns are just forbidden.
+
+**中文** 但它又高度约定俗成、高度标准化，连看起来无害的坏模式都被禁止。
+
+### [22:51–22:59]
+**EN** And the best example of this I have is actually something that seems very, very innocent when you look at it.
+
+**中文** 我最好的例子，其实是一个乍一看非常、非常无害的东西。
+
+### [22:59–23:02]
+**EN** But when you think about it, it's actually really bad.
+
+**中文** 但仔细一想，其实很糟。
+
+### [23:02–23:07]
+**EN** And that pattern is agents leaving comments in the code.
+
+**中文** 这个模式就是：agents 在代码里留注释。
+
+### [23:08–23:20]
+**EN** Now, you know, when I first saw agents starting to do this, I initially wasn't—well, I did think that a lot of them are slop, but I also thought that, you know, it actually doesn't—it's not a bad thing.
+
+**中文** 我第一次看到 agents 开始这么做时，一开始——好吧，我确实觉得很多是 slop，但也觉得这其实没什么不好。
+
+### [23:20–23:36]
+**EN** Right. I guess if agents are leaving comments in the code because as humans we left comments in the code whenever we saw, you know, edge cases or we needed to actually make a workaround or, you know, leave a note to ourselves or a colleague
+
+**中文** 对吧，毕竟人类也会在看到边界情况、需要 workaround、或给自己/同事留备注时写注释——
+
+### [23:37–23:40]
+**EN** on a particularly tricky part of the codebase.
+
+**中文** 尤其在代码库特别棘手的地方。
+
+### [23:40–23:57]
+**EN** But what I quickly realized when we saw this happening in the Cursor codebase was that agents were just using the comments around the code as justification for why it wasn't going to solve the actual problem.
+
+**中文** 但我们在 Cursor 代码库里看到这件事时，我很快意识到：agents 只是在用代码旁的注释，当作「我不去解决真正问题」的正当理由。
+
+### [23:57–24:03]
+**EN** And instead paper over it with a bandaid or a short-term solution.
+
+**中文** 然后用创可贴式、短期方案把问题糊过去。
+
+### [24:04–24:22]
+**EN** So in Dune, which is again the framework that powers Grok Bot, we made the choice to actually ban comments for that reason—so that agents would not just copy that pattern and
+
+**中文** 所以在 Dune——也就是驱动 Grok Bot 的框架——里，我们因此选择直接禁止注释，好让 agents 不会复制这个模式并
+
+### [24:23–24:26]
+**EN** propagate it everywhere in the codebase.
+
+**中文** 在代码库里到处传播。
+
+### [24:26–24:37]
+**EN** So my pitch here is that every team really needs something—you know, a role—that I'm calling a gardener.
+
+**中文** 所以我的建议是：每个团队都真的需要一个角色——我称之为 gardener（园丁）。
+
+### [24:37–24:52]
+**EN** In the same way that, you know, with a real garden, you need someone who is thinking a lot about the, you know, things that can kind of creep in and grow in ways that you don't want—like, you know, you have weeds.
+
+**中文** 就像真正的花园需要有人盯着那些会悄悄长进来、长到你不想要的方向的东西——比如杂草。
+
+### [24:52–24:57]
+**EN** You have, you know, just other types of organic growth.
+
+**中文** 还有其他各种「有机生长」。
+
+### [24:57–25:00]
+**EN** I don't really know gardening that well.
+
+**中文** 我对园艺其实不太懂。
+
+### [25:00–25:07]
+**EN** But you have things that, you know, unwanted pests and stuff like that that kind of creep into your codebase.
+
+**中文** 但总有些不受欢迎的害虫之类的东西，会悄悄钻进你的代码库。
+
+### [25:07–25:14]
+**EN** And so you want to nip them in the bud as soon as possible before they start propagating everywhere.
+
+**中文** 所以你要尽早掐掉苗头，别等它们到处扩散。
+
+### [25:14–25:20]
+**EN** A lot of the principles behind Dune are really centered around these three things.
+
+**中文** Dune 背后的很多原则，其实围绕这三件事。
+
+### [25:20–25:27]
+**EN** First of all, we want to delete tech debt that we already have for, you know, for reasons I just mentioned.
+
+**中文** 第一，我们要删掉已经存在的技术债——原因就是我刚才说的那些。
+
+### [25:27–25:35]
+**EN** We want to keep or enforce a single paved path for most blessed patterns.
+
+**中文** 第二，对绝大多数「受认可」的模式，我们要保留或强制一条唯一的铺好的路。
+
+### [25:35–25:48]
+**EN** You know, there should be one conventional way to do some things so that agents don't really need to guess, and there should be enough guidance in the codebase, in CI and lint rules
+
+**中文** 做某些事应该只有一种约定俗成的方式，agents 不用猜；代码库、CI 和 lint 规则里也要有足够引导，
+
+### [25:48–25:53]
+**EN** so that the agents are guided to follow that path.
+
+**中文** 好把 agents 引上那条路。
+
+### [25:53–26:02]
+**EN** And then finally, whenever you see tech debt or bad patterns, your instinct should be: I need to write a lint rule against it.
+
+**中文** 最后，每当看到技术债或坏模式，你的本能反应应该是：我要写一条 lint 规则来对付它。
+
+### [26:02–26:09]
+**EN** You don't always have to clean it up immediately because if you write a lint rule, you can at least stop the bleeding,
+
+**中文** 你不必总是立刻清干净——写了 lint 规则，至少能先止血，
+
+### [26:09–26:14]
+**EN** and which, you know, doesn't solve the problem entirely, but it at least prevents it from growing.
+
+**中文** 这并不能完全解决问题，但至少能防止它继续长大。
+
+### [26:14–26:24]
+**EN** So I definitely recommend, you know, really thinking a lot about how you can guard against anti-patterns so that they don't spread like a virus,
+
+**中文** 所以我强烈建议认真想：怎样防范反模式，别让它们像病毒一样扩散；
+
+### [26:24–26:38]
+**EN** and then also spend time to actually, you know, get your agents to clean them up so that your codebase is just constantly kept in a state where you would be happy if an agent were to copy it.
+
+**中文** 同时也花时间让 agents 去清理，让代码库始终处在「就算被 agent 复制，你也乐意」的状态。
+
+### [26:38–26:42]
+**EN** That's the kind of mindset that I would recommend having.
+
+**中文** 这就是我推荐大家持有的心态。
+
+### [26:42–26:49]
+**EN** And then I won't actually go through all the details of Dune itself, but I'll just kind of gloss through some interesting parts.
+
+**中文** 我不会把 Dune 的细节讲完，只快速带过一些有意思的部分。
+
+### [26:49–26:56]
+**EN** So again, as a reminder, Dune is the architecture, the client framework that we built to power Grok Bot.
+
+**中文** 再次提醒：Dune 是我们为驱动 Grok Bot 而建的架构、客户端框架。
+
+### [26:56–27:02]
+**EN** We've invested a lot into, you know, all the things I was saying where we have conventions.
+
+**中文** 我们在我说的那些事上投入很多，其中就包括各种约定。
+
+### [27:02–27:11]
+**EN** We have a lot of conventions about where code should live and where and how code should be imported between them.
+
+**中文** 我们有很多约定：代码该放哪、模块之间该如何、往哪儿 import。
+
+### [27:11–27:20]
+**EN** So in Dune applications, you know, there's different concepts where, like for example, features are all co-located in a single folder.
+
+**中文** 在 Dune 应用里有不同概念——比如 features 都共置在同一个文件夹里。
+
+### [27:20–27:28]
+**EN** You have an entry point that's, you know, in the React part of the code that determines—you can kind of think of it like a route.
+
+**中文** 有一个入口点在 React 那一侧，可以大致当成 route。
+
+### [27:28–27:32]
+**EN** You have transcript cards that show up in the Grok Bot application.
+
+**中文** 有出现在 Grok Bot 应用里的 transcript cards。
+
+### [27:32–27:37]
+**EN** You have a host that runs on the, you know, the Grok Bot virtual machine.
+
+**中文** 有一个 host 跑在 Grok Bot 的虚拟机上。
+
+### [27:37–27:44]
+**EN** And then of course you have your client, which powers the overall Dune application.
+
+**中文** 当然还有 client，驱动整个 Dune 应用。
+
+### [27:44–27:57]
+**EN** And we have a lot of strict boundaries between these things where just as an example, things that run on the main process,
+
+**中文** 这些东西之间有很多严格边界。举个例子：跑在 main process 上的东西，
+
+### [27:57–28:02]
+**EN** or the main thread in Electron, aren't allowed to be run on the renderer thread.
+
+**中文** 或者说 Electron 的 main thread，不允许跑到 renderer thread 上。
+
+### [28:02–28:09]
+**EN** And we keep that separation very intentionally because of lessons we learned from Cursor's Agents Window
+
+**中文** 我们刻意保持这种分离，因为从 Cursor Agents Window 学到过教训：
+
+### [28:09–28:18]
+**EN** where we would sometimes see code accidentally get imported into the renderer thread and, you know, slow code.
+
+**中文** 有时代码会意外被 import 进 renderer thread，成为慢代码。
+
+### [28:18–28:27]
+**EN** And since on the renderer thread you want your UI to be very smooth and performant,
+
+**中文** 而在 renderer thread 上你希望 UI 非常流畅、高性能，
+
+### [28:27–28:34]
+**EN** you need to make sure that you don't have any long tasks or, you know, things that take longer than 16 milliseconds
+
+**中文** 就必须确保没有长任务，或者说不能超过 16 毫秒——
+
+### [28:34–28:41]
+**EN** if you want like 60 frames per second, or 8 milliseconds if you want 120 frames per second.
+
+**中文** 如果你要 60 帧；若要 120 帧，则是 8 毫秒。
+
+### [28:41–28:53]
+**EN** And so your renderer has to be constantly in a state where it is, you know, it can really kind of chunk up the work and not do them all at once.
+
+**中文** 所以 renderer 必须始终处在能把工作切块、而不是一次全干完的状态。
+
+### [28:53–29:03]
+**EN** And so we have code within Dune that enforces these boundaries through the import and dependency graph.
+
+**中文** 于是 Dune 里有代码通过 import 与依赖图来强制这些边界。
+
+### [29:03–29:16]
+**EN** But yeah, just an example of a pattern that we saw lead to really bad performance that we categorically eliminated through the architecture of Dune.
+
+**中文** 这就是一个我们见过会导致极差性能、又通过 Dune 架构从类别上消除掉的模式例子。
+
+### [29:16–29:22]
+**EN** And then all of these other pieces aren't that interesting.
+
+**中文** 其他那些细节就没那么有意思了。
+
+### [29:23–29:36]
+**EN** But again, the core theme here, you know, it's not about Dune, but the idea that an agent-friendly framework of your own is actually very, very powerful.
+
+**中文** 但核心主题再次强调：重点不在 Dune 本身，而在于——你自己的 agent-friendly 框架其实非常、非常强大。
+
+### [29:36–29:45]
+**EN** And you can encode all of the learnings that you and your best engineers on your team have tribal knowledge of.
+
+**中文** 你可以把你和团队里最好的工程师们那些部落知识（tribal knowledge）全部编码进去。
+
+### [29:46–29:57]
+**EN** And I think the lesson here is that: how do you take that away from, you know, what used to be in the style guide process of reviewing code and, you know,
+
+**中文** 我觉得这里的启示是：怎样把那些过去依赖 style guide、靠人审代码——
+
+### [29:57–30:13]
+**EN** engineers reviewing other engineers' work and leaving comments—to extract almost like extracting that knowledge and encoding that into the framework, into the codebase itself, so that the codebase acts as the memory.
+
+**中文** 工程师互审、留评论——的知识抽出来，编码进框架、进代码库本身，让代码库充当记忆。
+
+### [30:13–30:26]
+**EN** Right. It's the thing—like coming back to this idea that, you know, the codebase is just the thing—that it's the materialized snapshot of the state in which you want your agents to extend.
+
+**中文** 对，回到这个想法：代码库就是你希望 agents 去延伸的那个状态的物化快照。
+
+### [30:26–30:38]
+**EN** And you want that codebase to be so pristine, so great that the next agent that comes along is just very likely to continue that pattern and keep it really, really good.
+
+**中文** 你希望代码库如此干净、如此优秀，下一个到来的 agent 极有可能延续这个模式，并把它保持得非常好。
+
+### [30:38–30:57]
+**EN** And if you spend enough time on this process, like I mentioned, you can really set up a Michelin kitchen or a software factory where because you've spent so much time on, you know, all of these pieces that allow you to trust your agents,
+
+**中文** 如果你在这个过程上投入够多，就像我说的，你真的能搭起一座米其林厨房或「软件工厂」——因为你在所有这些让你信任 agents 的环节上花了足够时间，
+
+### [30:57–31:19]
+**EN** whether it's in the codebase, whether it's lint rules, whether it is, you know, diagnostics or rules or Bugbot or skills—these layers come together and provide you a lot of trust, because now, you know, just imagine when you're working in the Grok Bot codebase.
+
+**中文** 无论是代码库、lint 规则、诊断、rules、Bugbot 还是 skills——这些层叠在一起给你大量信任。现在想象你在 Grok Bot 代码库里工作：
+
+### [31:20–31:37]
+**EN** It's super locked down, you know, it's like almost impossible to write bad code. So, you know, even an agent with very little context, you know, even an agent with not a lot of reasoning can come in and actually write code that's good.
+
+**中文** 它锁得超级死，几乎不可能写出坏代码。所以即便上下文很少、推理也不多的 agent 进来，也能写出不错的代码。
+
+### [31:37–31:59]
+**EN** And going back to my example about the Michelin kitchen, I think there's a lot here, right, where, you know, we're setting up our agents, our bots with skills and tools, you know, we're training them, we're setting up our kitchen in a way that makes sense, right, for the agents and bots to do the right thing by default.
+
+**中文** 回到米其林厨房的例子，这里很有内容：我们给 agents、bots 配备 skills 和工具，训练它们，把厨房布置得合理，让它们默认就做对的事。
+
+### [31:59–32:18]
+**EN** You know, whenever we see, for example, in the kitchen example, if we notice that one of our cooks or dishwashers is constantly tripping over something, of course we need to fix that, right—we need to problem-solve and ensure that others don't trip as well because, you know, the kitchen is a very dangerous place and you don't want to hurt yourself.
+
+**中文** 比如在厨房里，如果发现某个厨师或洗碗工老被什么东西绊倒，当然要修好——要解决问题，也要确保别人不再绊倒，因为厨房很危险，你可不想受伤。
+
+### [32:19–32:33]
+**EN** It's the same mindset, I think, that we should have with our codebases. How do we set it up so that even agents without a lot of knowledge can do a good job.
+
+**中文** 对我们的代码库，我觉得该有同样的心态：怎样布置，才能让知识不多的 agents 也能干好。
+
+### [32:34–32:55]
+**EN** And I think with, you know, Grok Bot—Grok Bot and Cursor play an interesting role together, where Grok Bot is really great at providing what I call the outer loop, because you can connect Grok Bot to lots of different, you know, different connectors like Slack, to Datadog,
+
+**中文** 而 Grok Bot 和 Cursor 之间有有趣的分工：Grok Bot 特别擅长提供我所说的 outer loop（外环），因为你可以把 Grok Bot 接到很多不同的 connectors，比如 Slack、Datadog、
+
+### [32:55–33:06]
+**EN** like Sentry, PlanetScale, whatever services that you use, and you can aggregate all of that information together and use that to make really good decisions for itself.
+
+**中文** Sentry、PlanetScale——你用的任何服务——把信息汇聚起来，用来为自己做出很好的决策。
+
+### [33:07–33:17]
+**EN** Some people call this like a company brain. I don't really think—I personally don't think you need anything that sophisticated here, because agents are really good at using tools.
+
+**中文** 有人把这叫「公司大脑」。我个人觉得这里不需要那么复杂，因为 agents 本来就很擅长用工具。
+
+### [33:18–33:37]
+**EN** And so if you connect these tools to Grok Bot and you start having your Grok Bot auto-kickoff things like cloud agents, you can actually find that it's really not—you don't really have to invest in a lot of infrastructure to build a software factory.
+
+**中文** 所以把这些工具接到 Grok Bot，再让 Grok Bot 自动拉起 cloud agents 之类的事，你会发现其实不必为「软件工厂」投很多基础设施。
+
+### [33:38–33:44]
+**EN** In fact, I'm going to, you know, cross out this term, because I don't like this term.
+
+**中文** 事实上我打算把这个词划掉，因为我不喜欢这个说法。
+
+### [33:46–34:01]
+**EN** I think you can set up this personal Michelin kitchen for yourself through Grok Bot—things like Grok Bot routines, which let you subscribe to Slack threads, to Sentry alerts that let you kick off things automatically.
+
+**中文** 我觉得通过 Grok Bot 就能给自己搭一座个人米其林厨房——比如 Grok Bot routines，让你订阅 Slack 线程、Sentry 告警，从而自动拉起任务。
+
+### [34:02–34:10]
+**EN** And when you combine all of these things that I've been mentioning, you know, your codebase, your rules, your skills, they all compound.
+
+**中文** 当你把我一直说的这些东西——代码库、rules、skills——组合起来，它们会彼此复利。
+
+### [34:11–34:21]
+**EN** And Grok Bot will be able to, you know, automatically respond to events that come from the outer loop and then kick off cloud agents.
+
+**中文** Grok Bot 就能自动响应来自 outer loop 的事件，然后拉起 cloud agents。
+
+### [34:21–34:30]
+**EN** And you can also set up Cursor automations and use our SDK to set up additional bots as well.
+
+**中文** 你也可以配置 Cursor automations，并用我们的 SDK 再搭更多 bots。
+
+### [34:30–34:39]
+**EN** That brings a lot of these pieces of agent infra that you've set up and allow them to do much more complicated tasks.
+
+**中文** 这样就能把你搭好的大量 agent 基础设施串起来，让它们完成更复杂的任务。
+
+### [34:40–35:00]
+**EN** So if you've done all this, then I think you can get to a point where, you know, I have some screenshots here of some of our automations and our agents that work on Cursor, where we are automatically reproducing bug reports,
+
+**中文** 如果你都做到了，就能到这个地步——这里有一些我们在 Cursor 上跑的 automations 和 agents 的截图：我们在自动复现 bug 报告，
+
+### [35:00–35:13]
+**EN** we're automatically opening pull requests, we are essentially adding a lot of value to the entire team, because all of these things compound.
+
+**中文** 自动开 PR——本质上是在给整个团队加很多价值，因为这一切会复利。
+
+### [35:16–35:27]
+**EN** So if we kind of zoom out again and go back to this graph, I think that—to kind of close off the talk—
+
+**中文** 如果我们再拉远一点，回到这张图，我想——作为收尾——
+
+### [35:27–35:52]
+**EN** If you spend a lot of time thinking about all of the pieces that you need to be able to ascend the trust graph, you start getting to a place where you can really trust your agents more and parallelize your work and also empower your entire team to build on top of these pieces of infrastructure for your agents
+
+**中文** 如果你花很多时间想清楚攀登信任图谱所需的每一块，你就会到达一个地方：更能信任 agents、更能并行工作，也能赋能整个团队基于这些 agent 基础设施去建设，
+
+### [35:52–36:01]
+**EN** and empower everyone, you know, every engineer on your team, every builder to be extremely productive and be able to write high quality code.
+
+**中文** 并赋能所有人——团队里每位工程师、每位 builder——都极高产，并能写出高质量代码。
+
+### [36:01–36:05]
+**EN** So the last thing I want to leave you with is actually this piece.
+
+**中文** 最后想留给你们的，其实是这一块。
+
+### [36:06–36:09]
+**EN** Sorry, not that piece, but this piece.
+
+**中文** 抱歉，不是那一块，是这一块。
+
+### [36:09–36:21]
+**EN** I think if there's only one thing you take away from my talk, it should be this slide here, which is, you know, these are the activities that will help you build up towards a high-trust environment.
+
+**中文** 如果这场分享你只带走一件事，就该是这张幻灯片：这些活动能帮你把环境建向高信任。
+
+### [36:22–36:44]
+**EN** You know, whenever you find yourself correcting and intervening with your agent, you really want to think about it from these five pieces and where is the most effective step in this sequence in order to make your agent, you know, much more trustworthy.
+
+**中文** 每当你发现自己在纠正、干预 agent 时，真的要从这五块去想：在这个序列里，哪一步最有效，能让 agent 更值得信任。
+
+### [36:45–37:08]
+**EN** And of course, I definitely recommend thinking about it in this order where, you know, you either invest the time to make that pattern categorically impossible through your codebase and architecture and data structures, or you start looking at things like static analysis, and then you layer that on with rules and Bugbot and skills.
+
+**中文** 当然，我强烈建议按这个顺序想：要么投入时间，通过代码库、架构和数据结构让该模式在类别上不可能；要么从静态分析入手；再叠上 rules、Bugbot 和 skills。
+
+### [37:09–37:28]
+**EN** If you do all of that, and you also spend some time, you know, thinking about your code quality in terms of skills, you get to a place where you trust the environment so much that your agents can just be free.
+
+**中文** 如果你都做到了，还花时间用 skills 去管代码质量，你就会到达一个地方：对环境信任到 agents 可以真正自由发挥。
+
+### [37:28–37:40]
+**EN** Right. And personally, I have spent a lot of time on this for Grok Bot's codebase, for example, and this is really the secret. Right. Well, it's not really a secret. It's a lot of hard work.
+
+**中文** 对。就我个人而言，比如在 Grok Bot 的代码库上我就花了很多时间——这才是真正的秘诀。好吧，其实也不是秘诀，就是大量苦功。
+
+### [37:40–38:00]
+**EN** But I hope you found this talk useful. And please reach out to me on X. My handle is poteto with an E. And I hope that you'll have a lot of fun and success building your own Michelin kitchen. Thanks for watching.
+
+**中文** 希望这场分享对你有用。欢迎在 X 上找我，我的账号是 poteto——带个 e。也希望你搭建自己的米其林厨房时又好玩又成功。谢谢观看。
+
