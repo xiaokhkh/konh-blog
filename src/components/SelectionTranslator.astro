@@ -1,8 +1,13 @@
 <div class="selection-translator" id="selection-translator" hidden>
   <div class="selection-translator-actions">
     <span data-status>Translating...</span>
+    <button type="button" data-speak aria-label="Read selected text aloud">Listen</button>
     <button type="button" data-close aria-label="Close translation">x</button>
   </div>
+  <label class="selection-translator-voice" data-voice-row hidden>
+    Voice
+    <select data-voice aria-label="Voice for selected text"></select>
+  </label>
   <div class="selection-translator-result" data-result></div>
   <a data-fallback href="#" target="_blank" rel="noreferrer" hidden>Open in Google Translate</a>
 </div>
@@ -12,16 +17,123 @@
     const panel = document.querySelector('#selection-translator');
     const status = panel?.querySelector('[data-status]');
     const closeButton = panel?.querySelector('[data-close]');
+    const speakButton = panel?.querySelector('[data-speak]');
+    const voiceRow = panel?.querySelector('[data-voice-row]');
+    const voiceSelect = panel?.querySelector('[data-voice]');
     const result = panel?.querySelector('[data-result]');
     const fallback = panel?.querySelector('[data-fallback]');
     const articleBody = document.querySelector('.article-body');
     let selectedText = '';
     let translateController = null;
     let translateTimer = 0;
+    let speechToken = 0;
+    let speaking = false;
+    let activeUtterance = null;
+    const synthesizer = 'speechSynthesis' in window ? window.speechSynthesis : null;
+    const preferredVoices = new Map();
 
-    if (!panel || !status || !closeButton || !result || !fallback || !articleBody) return;
+    if (!panel || !status || !closeButton || !speakButton || !voiceRow || !voiceSelect || !result || !fallback || !articleBody) return;
+
+    const sourceLanguage = () => /[\u3400-\u9fff]/.test(selectedText) ? 'zh' : 'en';
+
+    const stopSpeech = () => {
+      speechToken += 1;
+      speaking = false;
+      activeUtterance = null;
+      synthesizer?.cancel();
+      speakButton.textContent = 'Listen';
+      speakButton.setAttribute('aria-label', 'Read selected text aloud');
+    };
+
+    const voiceScore = (voice, language) => {
+      const name = `${voice.name} ${voice.voiceURI}`;
+      return (/natural|neural|premium|enhanced/i.test(name) ? 100 : 0)
+        + (/Google|Microsoft/i.test(name) ? 20 : 0)
+        + (voice.default ? 10 : 0)
+        + (voice.lang.toLowerCase().startsWith(`${language}-`) ? 5 : 0);
+    };
+
+    const updateVoices = () => {
+      if (!synthesizer || !selectedText) {
+        voiceRow.hidden = true;
+        return;
+      }
+
+      const language = sourceLanguage();
+      const voices = synthesizer.getVoices()
+        .filter((voice) => voice.lang.toLowerCase().startsWith(language))
+        .sort((a, b) => voiceScore(b, language) - voiceScore(a, language));
+      const preferred = preferredVoices.get(language);
+      voiceSelect.replaceChildren(...voices.map((voice) => {
+        const option = document.createElement('option');
+        option.value = voice.voiceURI;
+        option.textContent = `${voice.name} (${voice.lang})`;
+        return option;
+      }));
+      if (preferred && voices.some((voice) => voice.voiceURI === preferred)) voiceSelect.value = preferred;
+      voiceRow.hidden = voices.length < 2;
+    };
+
+    const splitSpeechText = (text) => {
+      const chunks = [];
+      let remaining = text;
+      while (remaining.length > 180) {
+        const windowText = remaining.slice(0, 180);
+        const lastBreak = Math.max(
+          windowText.lastIndexOf(' '), windowText.lastIndexOf('，'), windowText.lastIndexOf('。'),
+          windowText.lastIndexOf(','), windowText.lastIndexOf('.'),
+        );
+        const end = lastBreak > 90 ? lastBreak + 1 : 180;
+        chunks.push(remaining.slice(0, end).trim());
+        remaining = remaining.slice(end).trimStart();
+      }
+      if (remaining) chunks.push(remaining);
+      return chunks;
+    };
+
+    const speakSelection = () => {
+      if (!synthesizer || !selectedText) return;
+      if (speaking) {
+        stopSpeech();
+        return;
+      }
+
+      stopSpeech();
+      const token = speechToken;
+      const chunks = splitSpeechText(selectedText);
+      const language = sourceLanguage();
+      const voice = synthesizer.getVoices().find((item) => item.voiceURI === voiceSelect.value && item.lang.toLowerCase().startsWith(language));
+      let index = 0;
+      speaking = true;
+      speakButton.textContent = 'Stop';
+      speakButton.setAttribute('aria-label', 'Stop reading');
+
+      const speakNext = () => {
+        if (token !== speechToken) return;
+        if (index >= chunks.length) {
+          stopSpeech();
+          return;
+        }
+        const utterance = new SpeechSynthesisUtterance(chunks[index++]);
+        utterance.lang = voice?.lang || (language === 'zh' ? 'zh-CN' : 'en-US');
+        if (voice) utterance.voice = voice;
+        utterance.rate = 0.95;
+        utterance.onend = () => {
+          if (activeUtterance === utterance) speakNext();
+        };
+        utterance.onerror = () => {
+          if (token !== speechToken) return;
+          stopSpeech();
+          status.textContent = 'Speech unavailable';
+        };
+        activeUtterance = utterance;
+        synthesizer.speak(utterance);
+      };
+      speakNext();
+    };
 
     const hidePanel = () => {
+      stopSpeech();
       if (translateController) translateController.abort();
       window.clearTimeout(translateTimer);
       panel.hidden = true;
@@ -53,6 +165,10 @@
       }
 
       selectedText = selection.text.slice(0, 1200);
+      stopSpeech();
+      speakButton.disabled = !synthesizer;
+      speakButton.title = synthesizer ? '' : 'Speech is unavailable in this browser';
+      updateVoices();
       const rect = selection.range.getBoundingClientRect();
       panel.hidden = false;
       const panelWidth = panel.offsetWidth || 320;
@@ -104,15 +220,20 @@
       }
     };
 
-    document.addEventListener('mouseup', () => window.setTimeout(showPanel, 0));
+    document.addEventListener('mouseup', (event) => {
+      if (!panel.contains(event.target)) window.setTimeout(showPanel, 0);
+    });
     document.addEventListener('keyup', (event) => {
       if (event.key === 'Escape') hidePanel();
-      else window.setTimeout(showPanel, 0);
+      else if (!panel.contains(event.target)) window.setTimeout(showPanel, 0);
     });
     document.addEventListener('selectionchange', () => {
-      if (!window.getSelection()?.toString().trim() && !panel.matches(':hover')) hidePanel();
+      if (!window.getSelection()?.toString().trim() && !panel.matches(':hover') && !panel.contains(document.activeElement)) hidePanel();
     });
     window.addEventListener('scroll', hidePanel, { passive: true });
+    synthesizer?.addEventListener('voiceschanged', updateVoices);
+    voiceSelect.addEventListener('change', () => preferredVoices.set(sourceLanguage(), voiceSelect.value));
+    speakButton.addEventListener('click', speakSelection);
     closeButton.addEventListener('click', hidePanel);
   })();
 </script>

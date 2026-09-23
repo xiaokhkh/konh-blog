@@ -420,6 +420,29 @@ input {
   gap: 8px;
 }
 
+.selection-translator-voice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  color: var(--faint);
+  font-size: 0.78rem;
+}
+
+.selection-translator-voice[hidden] {
+  display: none;
+}
+
+.selection-translator-voice select {
+  min-width: 0;
+  flex: 1;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px 7px;
+  background: var(--soft);
+  color: var(--ink);
+}
+
 .selection-translator-actions span {
   margin-right: auto;
   color: var(--faint);
