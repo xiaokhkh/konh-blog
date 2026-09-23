@@ -84,7 +84,10 @@
         .filter((voice) => voice.lang.toLowerCase().startsWith(language))
         .sort((a, b) => voiceScore(b, language) - voiceScore(a, language));
       const cloudVoices = [...elevenVoices].sort((a, b) => {
-        const matches = (voice) => voice.languages.some((item) => item.toLowerCase().startsWith(language));
+        const matches = (voice) => voice.languages.some((item) => {
+          const code = item.toLowerCase();
+          return code.startsWith(language) || (language === 'zh' && code === 'cmn');
+        });
         return Number(matches(b)) - Number(matches(a));
       });
       const preferred = preferredVoices.get(language);

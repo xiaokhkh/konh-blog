@@ -27,7 +27,7 @@ const readBody = (request) => {
 const loadVoices = async (apiKey) => {
   if (voiceSnapshot && Date.now() - voiceSnapshot.at < voiceTtlMs) return voiceSnapshot.voices;
 
-  const upstream = await fetch('https://api.elevenlabs.io/v2/voices?page_size=100', {
+  const upstream = await fetch('https://api.elevenlabs.io/v2/voices?voice_type=default&page_size=100', {
     headers: { 'xi-api-key': apiKey },
     signal: AbortSignal.timeout(10_000),
   });
