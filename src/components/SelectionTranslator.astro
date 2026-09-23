@@ -26,9 +26,11 @@
     let speechToken = 0;
     let speaking = false;
     let activeUtterance = null;
-    let speechController = null;
     let activeAudio = null;
     let audioUrl = '';
+    const speechCache = new Map();
+    const pendingSpeech = new Map();
+    const maxCachedSelections = 12;
     const synthesizer = 'speechSynthesis' in window ? window.speechSynthesis : null;
     if (!panel || !status || !closeButton || !speakButton || !speechStatus || !result || !fallback || !articleBody) return;
 
@@ -43,8 +45,6 @@
       speechToken += 1;
       speaking = false;
       activeUtterance = null;
-      speechController?.abort();
-      speechController = null;
       synthesizer?.cancel();
       activeAudio?.pause();
       activeAudio = null;
@@ -80,6 +80,30 @@
       synthesizer.speak(utterance);
     };
 
+    const loadSpeech = (text) => {
+      if (speechCache.has(text)) {
+        const audio = speechCache.get(text);
+        speechCache.delete(text);
+        speechCache.set(text, audio);
+        return Promise.resolve(audio);
+      }
+      if (pendingSpeech.has(text)) return pendingSpeech.get(text);
+
+      const pending = fetch('/api/selection-speech', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ text }),
+      }).then(async (response) => {
+        if (!response.ok) throw new Error('ElevenLabs unavailable');
+        const audio = await response.blob();
+        speechCache.set(text, audio);
+        if (speechCache.size > maxCachedSelections) speechCache.delete(speechCache.keys().next().value);
+        return audio;
+      }).finally(() => pendingSpeech.delete(text));
+      pendingSpeech.set(text, pending);
+      return pending;
+    };
+
     const speakSelection = async () => {
       if (!selectedText) return;
       if (speaking) return stopSpeech();
@@ -91,17 +115,9 @@
       speaking = true;
       speakButton.textContent = 'Stop';
       speakButton.setAttribute('aria-label', 'Stop reading');
-      setSpeechStatus(selectedText.length > 500 ? 'Reading the first 500 characters.' : 'Generating speech…');
-      speechController = new AbortController();
+      setSpeechStatus(selectedText.length > 500 ? 'Reading the first 500 characters.' : 'Loading speech…');
       try {
-        const response = await fetch('/api/selection-speech', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ text }),
-          signal: speechController.signal,
-        });
-        if (!response.ok) throw new Error('ElevenLabs unavailable');
-        const blob = await response.blob();
+        const blob = await loadSpeech(text);
         if (token !== speechToken) return;
         audioUrl = URL.createObjectURL(blob);
         activeAudio = new Audio(audioUrl);

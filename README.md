@@ -61,6 +61,11 @@ selections. Requests are limited to 500 characters and have a best-effort cap of
 generations per IP per hour. If ElevenLabs is not configured or temporarily unavailable,
 the panel falls back to a browser voice automatically.
 
+Generated audio is reused in the current page for the 12 most recently played selections.
+The server also caches audio for the same text, voice, and model for 24 hours, so a page
+refresh or another visitor does not trigger another ElevenLabs generation while that
+entry is available. Cache hits do not consume the per-IP generation limit.
+
 ## CMS
 
 The optional CMS is available at `/admin/`. Update `public/admin/config.yml` with your GitHub repo before deploying.

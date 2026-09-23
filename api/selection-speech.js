@@ -1,11 +1,15 @@
 import { createHash } from 'node:crypto';
 import { getCache } from '@vercel/functions';
 
-const cache = getCache({ namespace: 'selection-speech' });
+const rateCache = getCache({ namespace: 'selection-speech-rate' });
+const audioCache = getCache({ namespace: 'selection-speech-audio' });
 const maxTextLength = 500;
 const maxRequestsPerHour = 12;
+const audioCacheTtl = 24 * 60 * 60;
+const maxCacheableAudioBytes = 750_000;
 // George is an ElevenLabs premade voice; the multilingual model reads both languages.
 const voiceId = 'JBFqnCBsd6RMkjVDRZzb';
+const modelId = 'eleven_multilingual_v2';
 
 const json = (response, status, body) => {
   response.status(status);
@@ -39,10 +43,18 @@ const consumeRateLimit = async (request, apiKey) => {
     .split(',')[0].trim();
   const bucket = Math.floor(Date.now() / 3_600_000);
   const key = createHash('sha256').update(`${apiKey}:${ip}:${bucket}`).digest('hex');
-  const count = Number(await cache.get(key)) || 0;
+  const count = Number(await rateCache.get(key)) || 0;
   if (count >= maxRequestsPerHour) return false;
-  await cache.set(key, count + 1, { name: 'Speech requests per hour', ttl: 3600 });
+  await rateCache.set(key, count + 1, { name: 'Speech requests per hour', ttl: 3600 });
   return true;
+};
+
+const sendAudio = (response, audio, cacheState) => {
+  response.status(200);
+  response.setHeader('content-type', 'audio/mpeg');
+  response.setHeader('cache-control', 'no-store');
+  response.setHeader('x-speech-cache', cacheState);
+  response.end(audio);
 };
 
 export default async function handler(request, response) {
@@ -72,6 +84,13 @@ export default async function handler(request, response) {
   }
 
   try {
+    const audioKey = createHash('sha256').update(JSON.stringify([voiceId, modelId, text])).digest('hex');
+    const cachedAudio = await audioCache.get(audioKey);
+    if (typeof cachedAudio === 'string') {
+      sendAudio(response, Buffer.from(cachedAudio, 'base64'), 'hit');
+      return;
+    }
+
     if (!await consumeRateLimit(request, apiKey)) {
       json(response, 429, { error: 'Speech request limit reached; try again later' });
       return;
@@ -82,7 +101,7 @@ export default async function handler(request, response) {
       {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'xi-api-key': apiKey },
-        body: JSON.stringify({ text, model_id: 'eleven_multilingual_v2' }),
+        body: JSON.stringify({ text, model_id: modelId }),
         signal: AbortSignal.timeout(20_000),
       },
     );
@@ -92,10 +111,10 @@ export default async function handler(request, response) {
     }
 
     const audio = Buffer.from(await upstream.arrayBuffer());
-    response.status(200);
-    response.setHeader('content-type', 'audio/mpeg');
-    response.setHeader('cache-control', 'no-store');
-    response.end(audio);
+    if (audio.length <= maxCacheableAudioBytes) {
+      await audioCache.set(audioKey, audio.toString('base64'), { name: '', ttl: audioCacheTtl });
+    }
+    sendAudio(response, audio, 'miss');
   } catch {
     json(response, 503, { error: 'ElevenLabs speech is unavailable' });
   }
