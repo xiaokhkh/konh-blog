@@ -2,10 +2,10 @@ import { createHash } from 'node:crypto';
 import { getCache } from '@vercel/functions';
 
 const cache = getCache({ namespace: 'selection-speech' });
-const voiceTtlMs = 60 * 60 * 1000;
 const maxTextLength = 500;
 const maxRequestsPerHour = 12;
-let voiceSnapshot = null;
+// George is an ElevenLabs premade voice; the multilingual model reads both languages.
+const voiceId = 'JBFqnCBsd6RMkjVDRZzb';
 
 const json = (response, status, body) => {
   response.status(status);
@@ -22,31 +22,6 @@ const readBody = (request) => {
   } catch {
     return null;
   }
-};
-
-const loadVoices = async (apiKey) => {
-  if (voiceSnapshot && Date.now() - voiceSnapshot.at < voiceTtlMs) return voiceSnapshot.voices;
-
-  const upstream = await fetch('https://api.elevenlabs.io/v2/voices?voice_type=default&page_size=100', {
-    headers: { 'xi-api-key': apiKey },
-    signal: AbortSignal.timeout(10_000),
-  });
-  if (!upstream.ok) throw new Error(`Voice list failed: ${upstream.status}`);
-
-  const payload = await upstream.json();
-  const voices = (Array.isArray(payload.voices) ? payload.voices : [])
-    .filter((voice) => /^[A-Za-z0-9]{20}$/.test(voice.voice_id) && typeof voice.name === 'string')
-    .map((voice) => ({
-      id: voice.voice_id,
-      name: voice.name.slice(0, 80),
-      languages: [
-        ...(voice.verified_languages ?? []).map((item) => item.language),
-        voice.labels?.language,
-      ].filter((item) => typeof item === 'string'),
-    }));
-  if (voices.length === 0) throw new Error('No usable voices');
-  voiceSnapshot = { at: Date.now(), voices };
-  return voices;
 };
 
 const sameOrigin = (request) => {
@@ -72,8 +47,8 @@ const consumeRateLimit = async (request, apiKey) => {
 
 export default async function handler(request, response) {
   response.setHeader('x-content-type-options', 'nosniff');
-  if (request.method !== 'GET' && request.method !== 'POST') {
-    response.setHeader('allow', 'GET, POST');
+  if (request.method !== 'POST') {
+    response.setHeader('allow', 'POST');
     json(response, 405, { error: 'Method not allowed' });
     return;
   }
@@ -84,15 +59,6 @@ export default async function handler(request, response) {
     return;
   }
 
-  if (request.method === 'GET') {
-    try {
-      json(response, 200, { voices: await loadVoices(apiKey), maxTextLength });
-    } catch {
-      json(response, 503, { error: 'Voices are unavailable' });
-    }
-    return;
-  }
-
   if (!sameOrigin(request)) {
     json(response, 403, { error: 'Invalid origin' });
     return;
@@ -100,18 +66,12 @@ export default async function handler(request, response) {
 
   const body = readBody(request);
   const text = typeof body?.text === 'string' ? body.text.replace(/\s+/g, ' ').trim() : '';
-  const voiceId = body?.voiceId;
-  if (text.length < 2 || text.length > maxTextLength || !/^[A-Za-z0-9]{20}$/.test(voiceId ?? '')) {
-    json(response, 400, { error: `Select 2–${maxTextLength} characters and a valid voice` });
+  if (text.length < 2 || text.length > maxTextLength) {
+    json(response, 400, { error: `Select 2–${maxTextLength} characters` });
     return;
   }
 
   try {
-    const voices = await loadVoices(apiKey);
-    if (!voices.some((voice) => voice.id === voiceId)) {
-      json(response, 400, { error: 'Voice is unavailable' });
-      return;
-    }
     if (!await consumeRateLimit(request, apiKey)) {
       json(response, 429, { error: 'Speech request limit reached; try again later' });
       return;

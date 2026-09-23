@@ -4,11 +4,7 @@
     <button type="button" data-speak aria-label="Read selected text aloud">Listen</button>
     <button type="button" data-close aria-label="Close translation">x</button>
   </div>
-  <label class="selection-translator-voice" data-voice-row hidden>
-    Voice
-    <select data-voice aria-label="Voice for selected text"></select>
-  </label>
-  <div class="selection-translator-provider-note" data-provider-note hidden>Selected text is sent to ElevenLabs when played.</div>
+  <div class="selection-translator-provider-note">Selected text is sent to ElevenLabs when available.</div>
   <div class="selection-translator-speech-status" data-speech-status role="status" hidden></div>
   <div class="selection-translator-result" data-result></div>
   <a data-fallback href="#" target="_blank" rel="noreferrer" hidden>Open in Google Translate</a>
@@ -20,9 +16,6 @@
     const status = panel?.querySelector('[data-status]');
     const closeButton = panel?.querySelector('[data-close]');
     const speakButton = panel?.querySelector('[data-speak]');
-    const voiceRow = panel?.querySelector('[data-voice-row]');
-    const voiceSelect = panel?.querySelector('[data-voice]');
-    const providerNote = panel?.querySelector('[data-provider-note]');
     const speechStatus = panel?.querySelector('[data-speech-status]');
     const result = panel?.querySelector('[data-result]');
     const fallback = panel?.querySelector('[data-fallback]');
@@ -37,11 +30,7 @@
     let activeAudio = null;
     let audioUrl = '';
     const synthesizer = 'speechSynthesis' in window ? window.speechSynthesis : null;
-    const preferredVoices = new Map();
-    let elevenVoices = [];
-    let elevenVoicesPromise = null;
-
-    if (!panel || !status || !closeButton || !speakButton || !voiceRow || !voiceSelect || !providerNote || !speechStatus || !result || !fallback || !articleBody) return;
+    if (!panel || !status || !closeButton || !speakButton || !speechStatus || !result || !fallback || !articleBody) return;
 
     const sourceLanguage = () => /[\u3400-\u9fff]/.test(selectedText) ? 'zh' : 'en';
 
@@ -65,77 +54,7 @@
       speakButton.setAttribute('aria-label', 'Read selected text aloud');
     };
 
-    const voiceScore = (voice, language) => {
-      const name = `${voice.name} ${voice.voiceURI}`;
-      return (/natural|neural|premium|enhanced/i.test(name) ? 100 : 0)
-        + (/Google|Microsoft/i.test(name) ? 20 : 0)
-        + (voice.default ? 10 : 0)
-        + (voice.lang.toLowerCase().startsWith(`${language}-`) ? 5 : 0);
-    };
-
-    const updateVoices = () => {
-      if (!selectedText) {
-        voiceRow.hidden = true;
-        return;
-      }
-
-      const language = sourceLanguage();
-      const browserVoices = (synthesizer?.getVoices() ?? [])
-        .filter((voice) => voice.lang.toLowerCase().startsWith(language))
-        .sort((a, b) => voiceScore(b, language) - voiceScore(a, language));
-      const cloudVoices = [...elevenVoices].sort((a, b) => {
-        const matches = (voice) => voice.languages.some((item) => {
-          const code = item.toLowerCase();
-          return code.startsWith(language) || (language === 'zh' && code === 'cmn');
-        });
-        return Number(matches(b)) - Number(matches(a));
-      });
-      const preferred = preferredVoices.get(language);
-      const cloudOptions = cloudVoices.map((voice) => {
-        const option = document.createElement('option');
-        option.value = `eleven:${voice.id}`;
-        option.textContent = `${voice.name} · ElevenLabs`;
-        return option;
-      });
-      const browserOptions = browserVoices.map((voice) => {
-        const option = document.createElement('option');
-        option.value = `browser:${voice.voiceURI}`;
-        option.textContent = `${voice.name} · Browser`;
-        return option;
-      });
-      if (synthesizer) {
-        const option = document.createElement('option');
-        option.value = 'browser:default';
-        option.textContent = 'System default · Browser';
-        browserOptions.push(option);
-      }
-      voiceSelect.replaceChildren(...cloudOptions, ...browserOptions);
-      if (preferred && [...cloudOptions, ...browserOptions].some((option) => option.value === preferred)) {
-        voiceSelect.value = preferred;
-      }
-      voiceRow.hidden = cloudOptions.length + browserOptions.length === 0;
-      providerNote.hidden = !voiceSelect.value.startsWith('eleven:');
-      if (!panel.hidden) speakButton.disabled = voiceSelect.options.length === 0;
-    };
-
-    const loadElevenVoices = () => {
-      if (!elevenVoicesPromise) {
-        elevenVoicesPromise = fetch('/api/selection-speech')
-          .then(async (response) => {
-            if (!response.ok) throw new Error('ElevenLabs unavailable');
-            const payload = await response.json();
-            elevenVoices = Array.isArray(payload.voices) ? payload.voices : [];
-            updateVoices();
-          })
-          .catch(() => {
-            elevenVoices = [];
-            updateVoices();
-          });
-      }
-      return elevenVoicesPromise;
-    };
-
-    const speakWithBrowser = (voiceValue, text) => {
+    const speakWithBrowser = (text) => {
       if (!synthesizer) {
         stopSpeech();
         setSpeechStatus('Speech is unavailable in this browser.');
@@ -143,7 +62,8 @@
       }
       const token = speechToken;
       const language = sourceLanguage();
-      const voice = synthesizer.getVoices().find((item) => item.voiceURI === voiceValue?.replace(/^browser:/, ''));
+      const voices = synthesizer.getVoices().filter((item) => item.lang.toLowerCase().startsWith(language));
+      const voice = voices.find((item) => /natural|neural|premium|enhanced/i.test(item.name)) || voices[0];
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.lang = voice?.lang || (language === 'zh' ? 'zh-CN' : 'en-US');
       if (voice) utterance.voice = voice;
@@ -167,23 +87,17 @@
       stopSpeech();
       setSpeechStatus('');
       const text = selectedText.slice(0, 500);
-      const selectedVoice = voiceSelect.value;
       const token = speechToken;
       speaking = true;
       speakButton.textContent = 'Stop';
       speakButton.setAttribute('aria-label', 'Stop reading');
-      if (!selectedVoice.startsWith('eleven:')) {
-        speakWithBrowser(selectedVoice, text);
-        return;
-      }
-
       setSpeechStatus(selectedText.length > 500 ? 'Reading the first 500 characters.' : 'Generating speech…');
       speechController = new AbortController();
       try {
         const response = await fetch('/api/selection-speech', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ text, voiceId: selectedVoice.slice(7) }),
+          body: JSON.stringify({ text }),
           signal: speechController.signal,
         });
         if (!response.ok) throw new Error('ElevenLabs unavailable');
@@ -203,14 +117,13 @@
         speaking = true;
         speakButton.textContent = 'Stop';
         speakButton.setAttribute('aria-label', 'Stop reading');
-        speakWithBrowser(null, text);
+        speakWithBrowser(text);
       }
     };
 
     const hidePanel = () => {
       stopSpeech();
       setSpeechStatus('');
-      providerNote.hidden = true;
       if (translateController) translateController.abort();
       window.clearTimeout(translateTimer);
       panel.hidden = true;
@@ -244,12 +157,8 @@
       selectedText = selection.text.slice(0, 1200);
       stopSpeech();
       setSpeechStatus('');
-      speakButton.disabled = true;
+      speakButton.disabled = false;
       speakButton.title = 'Reads up to 500 characters';
-      updateVoices();
-      loadElevenVoices().then(() => {
-        if (!panel.hidden) speakButton.disabled = voiceSelect.options.length === 0;
-      });
       const rect = selection.range.getBoundingClientRect();
       panel.hidden = false;
       const panelWidth = panel.offsetWidth || 320;
@@ -312,11 +221,6 @@
       if (!window.getSelection()?.toString().trim() && !panel.matches(':hover') && !panel.contains(document.activeElement)) hidePanel();
     });
     window.addEventListener('scroll', hidePanel, { passive: true });
-    synthesizer?.addEventListener('voiceschanged', updateVoices);
-    voiceSelect.addEventListener('change', () => {
-      preferredVoices.set(sourceLanguage(), voiceSelect.value);
-      providerNote.hidden = !voiceSelect.value.startsWith('eleven:');
-    });
     speakButton.addEventListener('click', speakSelection);
     closeButton.addEventListener('click', hidePanel);
   })();
