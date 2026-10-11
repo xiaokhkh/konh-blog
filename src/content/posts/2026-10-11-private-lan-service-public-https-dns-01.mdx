@@ -1,0 +1,280 @@
+---
+title: 只在内网可访问的服务，如何拿到手机直接信任的 HTTPS 证书
+description: 一套脱敏后的方案：公网 DNS 指向私网地址，用 DNS-01 验证向 Let's Encrypt 申请证书，配合最小权限凭证与自动续期，让办公室里的 iPhone 能在线安装 Ad Hoc 测试包。
+pubDate: 2026-10-11
+tags:
+  - https
+  - dns
+  - ios
+  - devops
+  - security
+---
+
+我们的内测包在办公室里一台构建机上分发：Android、Mac 包放在一个局域网下载页上，测试同事直接下载。iOS 也想这样做，但 iOS 的 Ad Hoc 在线安装有一条硬性要求：**安装清单和安装包都必须通过 HTTPS 下载，而且证书必须是设备本来就信任的**。
+
+构建机只在内网，公网访问不到。这篇整理了让它拿到正式证书的完整方案：不开放任何公网端口，也不用给每台设备装根证书。
+
+文中的域名、地址、账号与区域 ID 都已替换为示例值。方案的 DNS 部分已经落地；证书签发、HTTPS 服务与真机安装还在验收中，文末单独列出验收项。
+
+## 目标与示例参数
+
+| 用途 | 示例值 |
+| --- | --- |
+| 内网下载服务器 | `192.168.10.20`（办公室局域网） |
+| 下载域名 | `dl.example.com` |
+| 公网 DNS | 托管在云厂商的权威 DNS（本文以 AWS Route53 为例） |
+| 证书签发方 | Let's Encrypt |
+| 证书工具 | acme.sh（DNS 插件 `dns_aws`） |
+| HTTPS 端口 | `443`（仅内网可达） |
+
+要满足的条件：
+
+1. 办公室里的 iPhone 用 Safari 打开 `https://dl.example.com/`，不出现任何证书警告。
+2. 点「安装」后，iOS 能通过 `itms-services` 拉取安装清单并从内网下载 IPA。
+3. 服务器不暴露到公网，证书自动续期，不依赖人工操作。
+
+## 为什么常规做法都不合适
+
+| 做法 | 问题 |
+| --- | --- |
+| 直接用内网 IP 加 HTTP | iOS 在线安装拒绝非 HTTPS 的清单 |
+| 自签名证书 | 每台设备都要手动安装并信任根证书，换设备、新同事都要重做，而且信任一个自建根证书的范围远大于这一个站点 |
+| 自建内网 CA | 同样要把根证书分发到所有设备，并且要自己维护一套 CA |
+| HTTP-01 验证申请正式证书 | 签发方要从公网访问服务器上的一个文件，内网服务器访问不到 |
+| 公网反向代理或隧道 | 把内网服务暴露到公网，几 GB 的安装包还要绕一圈公网，又慢又多一个攻击面 |
+
+关键在于：申请证书只需要证明「我控制这个域名」，**不需要证明「服务器在公网上可达」**。DNS-01 验证正好把这两件事分开了。
+
+## 方案总览
+
+```text
+                     公网权威 DNS
+   dl.example.com                  A    192.168.10.20     ← 私网地址，公网连不上
+   _acme-challenge.dl.example.com  TXT  "<随机令牌>"        ← 申请证书时临时写入
+          ▲                                       ▲
+          │ ② 签发方查询 TXT                      │ ① acme.sh 用最小权限凭证写入
+   Let's Encrypt ──── ③ 签发证书 ───▶ 内网服务器（acme.sh）
+                                                  │
+                                                  ▼
+                                       HTTPS 静态服务（443）
+                                                  ▲
+   办公室内的 iPhone ── 解析到 192.168.10.20 ── TLS 校验通过 ──┘
+```
+
+整个方案由六个部件组成，下面逐个说明。
+
+## 1. 固定内网地址
+
+DNS 里会写死服务器的内网地址，地址一变，域名就指错了。服务器要么配置静态 IP，要么在路由器上**按 MAC 地址做 DHCP 保留**。后者更不容易和其他设备冲突。
+
+如果服务器走 Wi-Fi，还要注意漫游或者多个 SSID 可能拿到不同网段的地址。分发用的机器最好接有线网络。
+
+## 2. 公网 DNS 记录指向私网地址
+
+在公网权威 DNS 里加一条普通的 A 记录：
+
+```text
+dl.example.com.  300  IN  A  192.168.10.20
+```
+
+这样做的效果是：
+
+- 任何人都能查到这个域名解析成 `192.168.10.20`，但这是 RFC 1918 私有地址，只有在同一个局域网里才连得上。
+- 对外只多暴露了一个内网地址，服务内容在公网无法访问。
+- TTL 设得短一些（比如 300 秒），以后换地址时生效更快。
+
+## 3. 最小权限的 DNS 凭证
+
+DNS-01 验证要求能写入 `_acme-challenge.<域名>` 这条 TXT 记录，所以需要一份能改 DNS 的云账号凭证。这份凭证会长期放在内网服务器上用于自动续期，必须把权限收到最小：**只能改这一条记录的 TXT 值**。
+
+先确认工具实际调用了哪些接口。以 acme.sh 的 `dns_aws` 插件为例，读源码可以看到它只调用：
+
+| 接口 | 用途 |
+| --- | --- |
+| `ListHostedZones` | 按域名查找托管区域（这个接口无法按资源限制） |
+| `ListResourceRecordSets` | 读取现有 TXT 值 |
+| `ChangeResourceRecordSets`（UPSERT / DELETE） | 写入、删除验证记录 |
+
+它不调用 `GetChange`，而是靠等待来让记录生效。据此写出的策略如下（以 Route53 为例，`ZONEID` 为托管区域 ID）：
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": "route53:ListHostedZones",
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": "route53:ListResourceRecordSets",
+      "Resource": "arn:aws:route53:::hostedzone/ZONEID"
+    },
+    {
+      "Effect": "Allow",
+      "Action": "route53:ChangeResourceRecordSets",
+      "Resource": "arn:aws:route53:::hostedzone/ZONEID",
+      "Condition": {
+        "ForAllValues:StringEquals": {
+          "route53:ChangeResourceRecordSetsNormalizedRecordNames": ["_acme-challenge.dl.example.com"],
+          "route53:ChangeResourceRecordSetsRecordTypes": ["TXT"],
+          "route53:ChangeResourceRecordSetsActions": ["UPSERT", "DELETE"]
+        }
+      }
+    }
+  ]
+}
+```
+
+这样即使凭证泄露，攻击者也改不了这个域名的 A 记录，更碰不到同一区域里的其他记录。凭证由一个具体的人负责接收和维护，存放在服务器上一个权限为 `600` 的文件里，不进代码仓库，也不放进流水线变量。
+
+## 4. 申请证书与自动续期
+
+一次性在服务器上执行（版本号固定，便于审计）：
+
+```bash
+# 安装 acme.sh（固定版本），会顺带注册一个每天运行的续期任务
+curl -fsSL https://github.com/acmesh-official/acme.sh/archive/refs/tags/3.1.1.tar.gz | tar -xz
+(cd acme.sh-3.1.1 && ./acme.sh --install --no-profile)
+
+# 加载最小权限凭证（文件权限 600）
+set -a; . ~/.lan-tls/aws.env; set +a
+
+# 通过 DNS-01 验证申请证书，ECDSA 证书体积小、握手快
+~/.acme.sh/acme.sh --issue --server letsencrypt --dns dns_aws \
+  -d dl.example.com --keylength ec-256
+
+# 把证书安装到服务读取的位置；续期后 acme.sh 会自动更新这两个文件
+~/.acme.sh/acme.sh --install-cert -d dl.example.com --ecc \
+  --fullchain-file ~/.lan-tls/fullchain.pem \
+  --key-file ~/.lan-tls/privkey.pem
+```
+
+申请过程是这样的：
+
+1. acme.sh 向 Let's Encrypt 申请，拿到一个随机令牌。
+2. 用上面的凭证把令牌写进 `_acme-challenge.dl.example.com` 的 TXT 记录。
+3. Let's Encrypt 从公网查询这条 TXT，确认无误后签发证书。
+4. acme.sh 删除这条 TXT 记录，把证书保存到本地。
+
+整个过程中，服务器本身从来没有被外部访问过。
+
+Let's Encrypt 证书有效期 90 天，acme.sh 默认在到期前约 30 天重新走一遍上述流程。需要注意：acme.sh 会把凭证另存一份在自己的配置文件里供续期使用，这份副本同样要妥善保管。
+
+## 5. HTTPS 静态服务：续期后不用重启
+
+下载页本身只是一个静态目录。我用 Python 标准库写了一个很小的 HTTPS 服务，关键在于**每个连接都重新加载证书**，这样续期后不用重启进程，也不需要给续期任务配置重载命令：
+
+```python
+import functools, http.server, ssl
+from pathlib import Path
+
+def context(cert_dir: Path) -> ssl.SSLContext:
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+    ctx.load_cert_chain(cert_dir / 'fullchain.pem', cert_dir / 'privkey.pem')
+    return ctx
+
+def serve(root: str, port: int, cert_dir: Path) -> None:
+    handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=root)
+    server = http.server.ThreadingHTTPServer(('0.0.0.0', port), handler)
+
+    def accept(sock=server.socket):
+        conn, addr = sock.accept()
+        # 握手放到请求线程里做，一个慢客户端不会卡住 accept 循环
+        return context(cert_dir).wrap_socket(conn, server_side=True,
+                                             do_handshake_on_connect=False), addr
+
+    server.get_request = accept
+    context(cert_dir)  # 启动时先校验一次，证书缺失就立即失败
+    server.serve_forever()
+```
+
+内网里几个人用，每次连接读一次证书的开销可以忽略。如果访问量大，可以换成 Caddy 或 nginx，并在续期命令里加上重载。
+
+macOS 允许普通用户进程监听 1024 以下的端口，所以服务能直接跑在 443 上，不需要 root。
+
+## 6. iOS 在线安装页
+
+iOS 的 Ad Hoc 在线安装由两部分组成：一个 `manifest.plist`，以及一个 `itms-services` 链接。
+
+```xml
+<!-- https://dl.example.com/<版本>/manifest.plist -->
+<plist version="1.0"><dict>
+  <key>items</key><array><dict>
+    <key>assets</key><array><dict>
+      <key>kind</key><string>software-package</string>
+      <key>url</key><string>https://dl.example.com/<版本>/App.ipa</string>
+    </dict></array>
+    <key>metadata</key><dict>
+      <key>bundle-identifier</key><string>com.example.app</string>
+      <key>bundle-version</key><string>1.0.123</string>
+      <key>kind</key><string>software</string>
+      <key>title</key><string>App 内测</string>
+    </dict>
+  </dict></array>
+</dict></plist>
+```
+
+页面上的安装按钮链接到：
+
+```text
+itms-services://?action=download-manifest&url=https://dl.example.com/<版本>/manifest.plist
+```
+
+清单里的 IPA 地址和清单本身都必须是 HTTPS。另外，我让根路径 `https://dl.example.com/` 始终显示最新版本。这样客户端里「去更新」的链接可以固定写成根地址，不用每次发版都改。
+
+## 端到端流程
+
+1. 测试同事在办公室 Wi-Fi 下用 Safari 打开 `https://dl.example.com/`，域名解析到 `192.168.10.20`。
+2. TLS 握手：证书由 Let's Encrypt 签发，iPhone 原生信任，地址栏正常显示锁标志。
+3. 点「iOS 安装」，iOS 通过 HTTPS 拉取清单，再从内网下载 IPA。几个 GB 的包走局域网，速度比走公网快得多。
+4. 设备的 UDID 在 Ad Hoc 描述文件的登记名单里，安装成功。之后在「设置 → 通用 → VPN 与设备管理」里信任开发者。
+
+## 安全考量
+
+| 关注点 | 结论 |
+| --- | --- |
+| 服务暴露面 | 没有公网入口，只在局域网可达 |
+| DNS 暴露的信息 | 一个私网地址，以及这个域名的存在 |
+| 证书透明日志 | 所有公开签发的证书都会记入证书透明（CT）日志，域名会被公开看到。如果连域名都不能公开，就只能用内网 CA |
+| 凭证泄露的影响 | 只能改一条 TXT 记录，最坏情况是有人为这个域名多申请一张证书。要利用它，攻击者还得先进入内网，或者控制 A 记录 |
+| 安装包访问控制 | 能连上内网的人都能下载；Ad Hoc 包本身也只能装在已登记的设备上。如果需要更严格的控制，可以再加一层基本认证 |
+
+## 常见坑与排查
+
+| 现象 | 原因与处理 |
+| --- | --- |
+| 内网也打不开域名，DNS 解析没有结果 | 部分路由器或 DNS 服务开启了「DNS 重绑定保护」，会拦截「公网域名解析到私网地址」的结果。把这个域名加入白名单 |
+| 开着代理软件的设备解析到 `198.18.x.x` | Clash 等代理的 fake-ip 模式接管了 DNS。给这个域名配置直连规则，并加入 fake-ip 过滤名单 |
+| 点安装没有反应，或提示「无法安装」 | 先检查清单里的 IPA 地址是不是 HTTPS、`bundle-identifier` 是否与包一致，再确认设备 UDID 是否在描述文件里 |
+| 过了一段时间，域名指向了别的设备 | 服务器的 IP 变了，DHCP 保留没有生效 |
+| 证书续期失败 | 先确认凭证没过期、没被吊销，再手动执行一次 `acme.sh --renew -d dl.example.com --ecc --force` 看报错 |
+| 用 HTTP 访问 443 端口报错 | 正常现象：这个端口只说 TLS，明文请求会被直接断开 |
+
+## 验收清单
+
+- [x] 公网 DNS 已添加 A 记录，权威解析返回私网地址
+- [ ] 服务器地址已在路由器上做 DHCP 保留
+- [ ] 最小权限凭证已创建，由指定负责人保管
+- [ ] 证书签发成功，到期时间正常
+- [ ] 内网 iPhone 打开页面无证书警告
+- [ ] 在线安装成功（至少验证一台未装过的设备）
+- [ ] 手动触发一次续期，服务无需重启即使用新证书
+- [ ] 开着代理软件的设备按规则配置后也能访问
+
+## 什么时候适合用这套方案
+
+适合：
+
+- 只在办公室或某个内网里使用、又需要正式 HTTPS 的内部服务，比如测试包分发、内部看板、设备调试页。
+- 域名的 DNS 托管在能通过 API 修改的服务上。
+
+不适合，或者需要换方案：
+
+- 服务需要从公网访问。这时用常规的 HTTP-01 验证，或者走 CDN、对象存储分发。
+- 连域名本身都不能出现在公开日志里。这时只能自建内网 CA，并管理设备上的信任。
+- 访问量很大，或者对可用性要求高。这时把下载放到 CDN 上，内网服务只保留给开发调试。
+
+这套组合的成本几乎为零：一条 DNS 记录、一个只能改一条 TXT 记录的凭证、一个定时任务。换来的是一个内网服务，拥有和公网网站完全一样的 HTTPS 体验。
